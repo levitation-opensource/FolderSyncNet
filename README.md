@@ -1,5 +1,5 @@
 ## Folder synchroniser
-Automatically copies updated files in source folder to destination folder for backup purposes. 
+Automatically and in realtime copies updated files in source folder to destination folder for backup purposes. 
 
 ### Installation
 
