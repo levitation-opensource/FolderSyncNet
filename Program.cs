@@ -300,6 +300,8 @@ namespace FolderSync
         public static bool DoingInitialSync = false;
 #pragma warning restore S2223
 
+        private static readonly AsyncLockQueueDictionary FileLocks = new AsyncLockQueueDictionary();
+
 
         public ConsoleWatch(IWatcher3 watch)
         {
@@ -522,8 +524,12 @@ namespace FolderSync
                         //NB! if file is renamed to cs~ or resx~ then that means there will be yet another write to same file, so lets skip this event here
                         if (!rfse.FileSystemInfo.FullName.EndsWith("~"))
                         {
-                            await FileUpdated(rfse.FileSystemInfo.FullName, context);
-                            await FileDeleted(rfse.PreviousFileSystemInfo.FullName, context);
+                            using (await FileLocks.LockAsync(rfse.FileSystemInfo.FullName, token))
+                            using (await FileLocks.LockAsync(rfse.PreviousFileSystemInfo.FullName, token))
+                            {
+                                await FileUpdated(rfse.FileSystemInfo.FullName, context);
+                                await FileDeleted(rfse.PreviousFileSystemInfo.FullName, context);
+                            }
                         }
                     }
                 }
@@ -551,9 +557,12 @@ namespace FolderSync
                     if (IsWatchedFile(fse.FileSystemInfo.FullName))
                     {
                         await AddMessage(ConsoleColor.Yellow, $"[{(fse.IsFile ? "F" : "D")}][-]:{fse.FileSystemInfo.FullName}", context);
-                    }
 
-                    await FileDeleted(fse.FileSystemInfo.FullName, context);
+                        using (await FileLocks.LockAsync(fse.FileSystemInfo.FullName, token))
+                        {
+                            await FileDeleted(fse.FileSystemInfo.FullName, context);
+                        }
+                    }
                 }
                 else
                 {
@@ -574,12 +583,15 @@ namespace FolderSync
             {
                 if (fse.IsFile)
                 {
-                    //if (IsWatchedFile(fse.FileSystemInfo.FullName))
-                    //{
-                    //    await AddMessage(ConsoleColor.Green, $"[{(fse.IsFile ? "F" : "D")}][+]:{fse.FileSystemInfo.FullName}", context);
-                    //}
+                    if (IsWatchedFile(fse.FileSystemInfo.FullName))
+                    {
+                        //await AddMessage(ConsoleColor.Green, $"[{(fse.IsFile ? "F" : "D")}][+]:{fse.FileSystemInfo.FullName}", context);
 
-                    await FileUpdated(fse.FileSystemInfo.FullName, context);
+                        using (await FileLocks.LockAsync(fse.FileSystemInfo.FullName, token))
+                        {
+                            await FileUpdated(fse.FileSystemInfo.FullName, context);
+                        }
+                    }
                 }
                 else
                 {
@@ -603,9 +615,12 @@ namespace FolderSync
                     if (IsWatchedFile(fse.FileSystemInfo.FullName))
                     {
                         await AddMessage(ConsoleColor.Gray, $"[{(fse.IsFile ? "F" : "D")}][T]:{fse.FileSystemInfo.FullName}", context);
-                    }
 
-                    await FileUpdated(fse.FileSystemInfo.FullName, context);
+                        using (await FileLocks.LockAsync(fse.FileSystemInfo.FullName, token))
+                        {
+                            await FileUpdated(fse.FileSystemInfo.FullName, context);
+                        }
+                    }
                 }
                 else
                 {
@@ -665,7 +680,10 @@ namespace FolderSync
                 ? await FileExtensions.ReadAllBytesAsync(otherFullName, context.Token) 
                 : null;
 
-            if ((otherFileData?.Length ?? -1) != fileData.Length || otherFileData != fileData)
+            if (
+                (otherFileData?.Length ?? -1) != fileData.Length
+                || !FileExtensions.BinaryEqual(otherFileData, fileData)
+            )
             {
                 await DeleteFile(otherFullName, context);
 
