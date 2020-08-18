@@ -430,7 +430,8 @@ namespace FolderSync
                 && NeedsUpdate(fullName)     //NB!
             )
             {
-                var fileData = await FileExtensions.ReadAllBytesAsync(fullName, context.Token);
+                //@"\\?\" prefix is needed for reading from long paths: https://stackoverflow.com/questions/44888844/directorynotfoundexception-when-using-long-paths-in-net-4-7
+                var fileData = await FileExtensions.ReadAllBytesAsync(@"\\?\" + fullName, context.Token);
                 var originalData = fileData;
 
                 //save without transformations
@@ -681,8 +682,9 @@ namespace FolderSync
 
 
             //NB! detect whether the file actually changed
-            var otherFileData = File.Exists(otherFullName) 
-                ? await FileExtensions.ReadAllBytesAsync(otherFullName, context.Token) 
+            var otherFileData = File.Exists(otherFullName)
+                //@"\\?\" prefix is needed for reading from long paths: https://stackoverflow.com/questions/44888844/directorynotfoundexception-when-using-long-paths-in-net-4-7
+                ? await FileExtensions.ReadAllBytesAsync(@"\\?\" + otherFullName, context.Token) 
                 : null;
 
             if (
@@ -694,7 +696,8 @@ namespace FolderSync
 
                 Directory.CreateDirectory(Path.GetDirectoryName(otherFullName));
 
-                await FileExtensions.WriteAllBytesAsync(otherFullName, fileData, context.Token);
+                //@"\\?\" prefix is needed for writing to long paths: https://stackoverflow.com/questions/44888844/directorynotfoundexception-when-using-long-paths-in-net-4-7
+                await FileExtensions.WriteAllBytesAsync(@"\\?\" + otherFullName, fileData, context.Token);
 
                 var now = DateTime.UtcNow;  //NB! compute now after saving the file
                 Global.ConverterSavedFileDates[otherFullName] = now;
