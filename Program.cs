@@ -36,6 +36,10 @@ namespace FolderSync
 
         public static string SrcPath = "";
         public static string DestPath = "";
+
+
+
+        internal static readonly AsyncLockQueueDictionary BinaryFileOperationLocks = new AsyncLockQueueDictionary();
     }
 #pragma warning restore S2223
 
@@ -697,15 +701,28 @@ namespace FolderSync
                 || !FileExtensions.BinaryEqual(otherFileData, fileData)
             )
             {
-                await DeleteFile(otherFullName, context);
+                var filenames = new List<string>()
+                            {
+                                fullName,
+                                otherFullName
+                            };
 
-                Directory.CreateDirectory(Path.GetDirectoryName(otherFullName));
+                //NB! in order to avoid deadlocks, always take the locks in deterministic order
+                filenames.Sort(StringComparer.InvariantCultureIgnoreCase);
 
-                //@"\\?\" prefix is needed for writing to long paths: https://stackoverflow.com/questions/44888844/directorynotfoundexception-when-using-long-paths-in-net-4-7
-                await FileExtensions.WriteAllBytesAsync(@"\\?\" + otherFullName, fileData, context.Token);
+                using (await Global.BinaryFileOperationLocks.LockAsync(filenames[0], context.Token))
+                using (await Global.BinaryFileOperationLocks.LockAsync(filenames[1], context.Token))
+                {
+                    await DeleteFile(otherFullName, context);
 
-                var now = DateTime.UtcNow;  //NB! compute now after saving the file
-                SynchroniserSavedFileDates[otherFullName] = now;
+                    Directory.CreateDirectory(Path.GetDirectoryName(otherFullName));
+
+                    //@"\\?\" prefix is needed for writing to long paths: https://stackoverflow.com/questions/44888844/directorynotfoundexception-when-using-long-paths-in-net-4-7
+                    await FileExtensions.WriteAllBytesAsync(@"\\?\" + otherFullName, fileData, context.Token);
+
+                    var now = DateTime.UtcNow;  //NB! compute now after saving the file
+                    SynchroniserSavedFileDates[otherFullName] = now;
+                }
 
 
                 await AddMessage(ConsoleColor.Magenta, $"Synchronised updates from file {fullName}", context);
