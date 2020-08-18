@@ -302,7 +302,7 @@ namespace FolderSync
 #pragma warning restore S2223
 
         private static ConcurrentDictionary<string, DateTime> SynchroniserSavedFileDates = new ConcurrentDictionary<string, DateTime>();
-        private static readonly AsyncLockQueueDictionary FileLocks = new AsyncLockQueueDictionary();
+        private static readonly AsyncLockQueueDictionary FileEventLocks = new AsyncLockQueueDictionary();
 
 
         public ConsoleWatch(IWatcher3 watch)
@@ -392,7 +392,7 @@ namespace FolderSync
             }
         }
 
-        public static DateTime GetConverterSaveDate(string fullName)
+        public static DateTime GetSynchroniserSaveDate(string fullName)
         {
             DateTime converterSaveDate;
             if (!SynchroniserSavedFileDates.TryGetValue(fullName, out converterSaveDate))
@@ -408,10 +408,10 @@ namespace FolderSync
             if (DoingInitialSync)
                 return true;
 
-            var converterSaveDate = GetConverterSaveDate(fullName);
+            var synchroniserSaveDate = GetSynchroniserSaveDate(fullName);
             var fileTime = GetFileTime(fullName);
 
-            if (fileTime > converterSaveDate.AddSeconds(3))     //NB! ignore if the file changed during 3 seconds after converter save   //TODO!! config
+            if (fileTime > synchroniserSaveDate.AddSeconds(3))     //NB! ignore if the file changed during 3 seconds after converter save   //TODO!! config
             {
                 var otherFullName = GetOtherFullName(fullName);
                 if (fileTime > GetFileTime(otherFullName))     //NB!
@@ -536,8 +536,8 @@ namespace FolderSync
                             //NB! in order to avoid deadlocks in case of file swaps, always take the locks in deterministic order
                             filenames.Sort(StringComparer.InvariantCultureIgnoreCase);
 
-                            using (await FileLocks.LockAsync(filenames[0], token))
-                            using (await FileLocks.LockAsync(filenames[1], token))
+                            using (await FileEventLocks.LockAsync(filenames[0], token))
+                            using (await FileEventLocks.LockAsync(filenames[1], token))
                             {
                                 await FileUpdated(rfse.FileSystemInfo.FullName, context);
                                 await FileDeleted(rfse.PreviousFileSystemInfo.FullName, context);
@@ -570,7 +570,7 @@ namespace FolderSync
                     {
                         await AddMessage(ConsoleColor.Yellow, $"[{(fse.IsFile ? "F" : "D")}][-]:{fse.FileSystemInfo.FullName}", context);
 
-                        using (await FileLocks.LockAsync(fse.FileSystemInfo.FullName, token))
+                        using (await FileEventLocks.LockAsync(fse.FileSystemInfo.FullName, token))
                         {
                             await FileDeleted(fse.FileSystemInfo.FullName, context);
                         }
@@ -599,7 +599,7 @@ namespace FolderSync
                     {
                         //await AddMessage(ConsoleColor.Green, $"[{(fse.IsFile ? "F" : "D")}][+]:{fse.FileSystemInfo.FullName}", context);
 
-                        using (await FileLocks.LockAsync(fse.FileSystemInfo.FullName, token))
+                        using (await FileEventLocks.LockAsync(fse.FileSystemInfo.FullName, token))
                         {
                             await FileUpdated(fse.FileSystemInfo.FullName, context);
                         }
@@ -631,7 +631,7 @@ namespace FolderSync
                     {
                         await AddMessage(ConsoleColor.Gray, $"[{(fse.IsFile ? "F" : "D")}][T]:{fse.FileSystemInfo.FullName}", context);
 
-                        using (await FileLocks.LockAsync(fse.FileSystemInfo.FullName, token))
+                        using (await FileEventLocks.LockAsync(fse.FileSystemInfo.FullName, token))
                         {
                             await FileUpdated(fse.FileSystemInfo.FullName, context);
                         }
