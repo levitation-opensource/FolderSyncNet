@@ -180,24 +180,24 @@ namespace FolderSync
 						if (false)
 						{						
 	                        //1. Do initial synchronisation from dest to src folder   //TODO: config for enabling and ordering of this operation
-	                        foreach (var fileSystemInfo in new DirectoryInfo(Global.DestPath)
-	                                                .GetFileSystemInfos("*." + Global.WatchedExtension, SearchOption.AllDirectories))
+	                        foreach (var fileInfo in new DirectoryInfo(Global.DestPath)
+	                                                .GetFiles("*." + Global.WatchedExtension, SearchOption.AllDirectories))
 	                        {
-	                            await ConsoleWatch.OnAddedAsync
-	                            (
-	                                new DummyFileSystemEvent(fileSystemInfo),
-	                                new CancellationToken()
-	                            );
-	                        }
+                                await ConsoleWatch.OnAddedAsync
+                                (
+                                    new DummyFileSystemEvent(fileInfo),
+                                    new CancellationToken()
+                                );
+                            }
 						}
 
                         //2. Do initial synchronisation from src to dest folder   //TODO: config for enabling and ordering of this operation
-                        foreach (var fileSystemInfo in new DirectoryInfo(Global.SrcPath)
-                                                    .GetFileSystemInfos("*." + Global.WatchedExtension, SearchOption.AllDirectories))
+                        foreach (var fileInfo in new DirectoryInfo(Global.SrcPath)
+                                                    .GetFiles("*." + Global.WatchedExtension, SearchOption.AllDirectories))
                         {
                             await ConsoleWatch.OnAddedAsync
                             (
-                                new DummyFileSystemEvent(fileSystemInfo),
+                                new DummyFileSystemEvent(fileInfo),
                                 new CancellationToken()
                             );
                         }
