@@ -172,6 +172,11 @@ namespace FolderSync
                         token: new CancellationToken()
                     );
 
+
+                    // start watching
+                    watch.Start();
+
+
                     if (true)
                     {
                         await ConsoleWatch.AddMessage(ConsoleColor.White, "Doing initial synchronisation...", messageContext);
@@ -207,9 +212,6 @@ namespace FolderSync
                         await ConsoleWatch.AddMessage(ConsoleColor.White, "Done initial synchronisation...", messageContext);
                     }
 
-
-                    // start watching
-                    watch.Start();
 
                     // listen for the Ctrl+C 
                     WaitForCtrlC();
