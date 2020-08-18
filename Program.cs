@@ -7,6 +7,7 @@
 //
 
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -527,8 +528,17 @@ namespace FolderSync
                         //NB! if file is renamed to cs~ or resx~ then that means there will be yet another write to same file, so lets skip this event here
                         if (!rfse.FileSystemInfo.FullName.EndsWith("~"))
                         {
-                            using (await FileLocks.LockAsync(rfse.FileSystemInfo.FullName, token))
-                            using (await FileLocks.LockAsync(rfse.PreviousFileSystemInfo.FullName, token))
+                            var filenames = new List<string>()
+                            {
+                                rfse.FileSystemInfo.FullName,
+                                rfse.PreviousFileSystemInfo.FullName
+                            };
+
+                            //NB! in order to avoid deadlocks in case of file swaps, always take the locks in deterministic order
+                            filenames.Sort(StringComparer.InvariantCultureIgnoreCase);
+
+                            using (await FileLocks.LockAsync(filenames[0], token))
+                            using (await FileLocks.LockAsync(filenames[1], token))
                             {
                                 await FileUpdated(rfse.FileSystemInfo.FullName, context);
                                 await FileDeleted(rfse.PreviousFileSystemInfo.FullName, context);
