@@ -36,12 +36,6 @@ namespace FolderSync
 
         public static string SrcPath = "";
         public static string DestPath = "";
-
-
-
-        internal static readonly AsyncLock FileOperationAsyncLock = new AsyncLock();
-
-        internal static ConcurrentDictionary<string, DateTime> ConverterSavedFileDates = new ConcurrentDictionary<string, DateTime>();
     }
 #pragma warning restore S2223
 
@@ -303,6 +297,7 @@ namespace FolderSync
         public static bool DoingInitialSync = false;
 #pragma warning restore S2223
 
+        private static ConcurrentDictionary<string, DateTime> SynchroniserSavedFileDates = new ConcurrentDictionary<string, DateTime>();
         private static readonly AsyncLockQueueDictionary FileLocks = new AsyncLockQueueDictionary();
 
 
@@ -396,7 +391,7 @@ namespace FolderSync
         public static DateTime GetConverterSaveDate(string fullName)
         {
             DateTime converterSaveDate;
-            if (!Global.ConverterSavedFileDates.TryGetValue(fullName, out converterSaveDate))
+            if (!SynchroniserSavedFileDates.TryGetValue(fullName, out converterSaveDate))
             {
                 converterSaveDate = DateTime.MinValue;
             }
@@ -710,7 +705,7 @@ namespace FolderSync
                 await FileExtensions.WriteAllBytesAsync(@"\\?\" + otherFullName, fileData, context.Token);
 
                 var now = DateTime.UtcNow;  //NB! compute now after saving the file
-                Global.ConverterSavedFileDates[otherFullName] = now;
+                SynchroniserSavedFileDates[otherFullName] = now;
 
 
                 await AddMessage(ConsoleColor.Magenta, $"Synchronised updates from file {fullName}", context);
@@ -729,7 +724,7 @@ namespace FolderSync
                     await ConsoleWatch.WriteException(ex, context);
                 }
 
-                Global.ConverterSavedFileDates[otherFullName] = now;
+                SynchroniserSavedFileDates[otherFullName] = now;
             }
         }
 
