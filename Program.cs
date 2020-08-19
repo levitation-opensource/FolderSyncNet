@@ -37,6 +37,8 @@ namespace FolderSync
         public static string SrcPath = "";
         public static string DestPath = "";
 
+        public static bool Bidirectional = false;
+
 
 
         internal static readonly AsyncLockQueueDictionary FileOperationLocks = new AsyncLockQueueDictionary();
@@ -106,6 +108,8 @@ namespace FolderSync
 
             var fileConfig = config.GetSection("Files");
 
+            Global.Bidirectional = fileConfig["Bidirectional"]?.ToUpperInvariant() == "TRUE";
+
             Global.SrcPath = fileConfig["SrcPath"];
             Global.DestPath = fileConfig["DestPath"];
 
@@ -144,7 +148,7 @@ namespace FolderSync
                 //Console.WriteLine(Environment.Is64BitProcess ? "x64 version" : "x86 version");
                 Console.WriteLine("Press Ctrl+C to stop the monitors.");
 
-                // start the monitor.
+                //start the monitor.
                 using (var watch = new Watcher())
                 {
                     //var drvs = System.IO.DriveInfo.GetDrives();
@@ -156,32 +160,35 @@ namespace FolderSync
                     //    }
                     //}
 
-#if BIDIRECTIONAL
-                    watch.Add(new Request(Global.DestPath, recursive: true));
-#endif
+                    if (Global.Bidirectional)
+                    {
+                        watch.Add(new Request(Global.DestPath, recursive: true));
+                    }
+
                     watch.Add(new Request(Global.SrcPath, recursive: true));
 
 
-                    // prepare the console watcher so we can output pretty messages.
+                    //prepare the console watcher so we can output pretty messages.
                     var consoleWatch = new ConsoleWatch(watch);
 
 
-                    var messageContext = new Context(
-                        eventObj: null,
-                        token: new CancellationToken()
-                    );
-
-
-                    // start watching
+                    //start watching
+                    //NB! start watching before synchronisation
                     watch.Start();
 
 
                     if (true)
                     {
+                        var messageContext = new Context(
+                            eventObj: null,
+                            token: new CancellationToken()
+                        );
+
+
                         await ConsoleWatch.AddMessage(ConsoleColor.White, "Doing initial synchronisation...", messageContext);
                         ConsoleWatch.DoingInitialSync = true;   //NB!
 
-						if (false)
+						if (Global.Bidirectional)
 						{						
 	                        //1. Do initial synchronisation from dest to src folder   //TODO: config for enabling and ordering of this operation
 	                        foreach (var fileInfo in new DirectoryInfo(Global.DestPath)
@@ -212,12 +219,12 @@ namespace FolderSync
                     }
 
 
-                    // listen for the Ctrl+C 
+                    //listen for the Ctrl+C 
                     WaitForCtrlC();
 
                     Console.WriteLine("Stopping...");
 
-                    // stop everything.
+                    //stop everything.
                     watch.Stop();
 
                     Console.WriteLine("Exiting...");
