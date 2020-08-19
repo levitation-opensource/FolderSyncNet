@@ -44,6 +44,9 @@
   <PropertyGroup>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
+  <PropertyGroup>
+    <ApplicationIcon>icon\iconfinder_Mobile_Share_Content_Sync_Transfer_Data_4014679 512x512.ico</ApplicationIcon>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="Microsoft.Extensions.Configuration, Version=1.1.2.0, Culture=neutral, PublicKeyToken=adb9793829ddae60, processorArchitecture=MSIL">
       <HintPath>..\FolderSync\packages\Microsoft.Extensions.Configuration.1.1.2\lib\netstandard1.1\Microsoft.Extensions.Configuration.dll</HintPath>
@@ -176,6 +179,14 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="copyrights.txt" />
+    <Content Include="icon\iconfinder_Mobile_Share_Content_Sync_Transfer_Data_4014679 128x128.ico" />
+    <Content Include="icon\iconfinder_Mobile_Share_Content_Sync_Transfer_Data_4014679 16x16.ico" />
+    <Content Include="icon\iconfinder_Mobile_Share_Content_Sync_Transfer_Data_4014679 256x256.ico" />
+    <Content Include="icon\iconfinder_Mobile_Share_Content_Sync_Transfer_Data_4014679 32x32.ico" />
+    <Content Include="icon\iconfinder_Mobile_Share_Content_Sync_Transfer_Data_4014679 48x48.ico" />
+    <Content Include="icon\iconfinder_Mobile_Share_Content_Sync_Transfer_Data_4014679 512x512.ico" />
+    <Content Include="icon\iconfinder_Mobile_Share_Content_Sync_Transfer_Data_4014679 64x64.ico" />
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
