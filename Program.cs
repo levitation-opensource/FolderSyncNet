@@ -108,7 +108,7 @@ namespace FolderSync
 
             var fileConfig = config.GetSection("Files");
 
-            Global.Bidirectional = fileConfig["Bidirectional"]?.ToUpperInvariant() == "TRUE";
+            Global.Bidirectional = fileConfig["Bidirectional"]?.ToUpperInvariant() == "TRUE";   //default is false
 
             Global.SrcPath = fileConfig["SrcPath"];
             Global.DestPath = fileConfig["DestPath"];
@@ -160,12 +160,12 @@ namespace FolderSync
                     //    }
                     //}
 
+                    watch.Add(new Request(Global.SrcPath, recursive: true));
+
                     if (Global.Bidirectional)
                     {
                         watch.Add(new Request(Global.DestPath, recursive: true));
                     }
-
-                    watch.Add(new Request(Global.SrcPath, recursive: true));
 
 
                     //prepare the console watcher so we can output pretty messages.
