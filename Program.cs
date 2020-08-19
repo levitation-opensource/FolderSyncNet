@@ -188,21 +188,7 @@ namespace FolderSync
                         await ConsoleWatch.AddMessage(ConsoleColor.White, "Doing initial synchronisation...", messageContext);
                         ConsoleWatch.DoingInitialSync = true;   //NB!
 
-						if (Global.Bidirectional)
-						{						
-	                        //1. Do initial synchronisation from dest to src folder   //TODO: config for enabling and ordering of this operation
-	                        foreach (var fileInfo in new DirectoryInfo(Global.DestPath)
-	                                                .GetFiles("*." + Global.WatchedExtension, SearchOption.AllDirectories))
-	                        {
-                                await ConsoleWatch.OnAddedAsync
-                                (
-                                    new DummyFileSystemEvent(fileInfo),
-                                    new CancellationToken()
-                                );
-                            }
-						}
-
-                        //2. Do initial synchronisation from src to dest folder   //TODO: config for enabling and ordering of this operation
+                        //1. Do initial synchronisation from src to dest folder   //TODO: config for enabling and ordering of this operation
                         foreach (var fileInfo in new DirectoryInfo(Global.SrcPath)
                                                     .GetFiles("*." + Global.WatchedExtension, SearchOption.AllDirectories))
                         {
@@ -211,6 +197,20 @@ namespace FolderSync
                                 new DummyFileSystemEvent(fileInfo),
                                 new CancellationToken()
                             );
+                        }
+
+                        if (Global.Bidirectional)
+                        {
+                            //2. Do initial synchronisation from dest to src folder   //TODO: config for enabling and ordering of this operation
+                            foreach (var fileInfo in new DirectoryInfo(Global.DestPath)
+                                                    .GetFiles("*." + Global.WatchedExtension, SearchOption.AllDirectories))
+                            {
+                                await ConsoleWatch.OnAddedAsync
+                                (
+                                    new DummyFileSystemEvent(fileInfo),
+                                    new CancellationToken()
+                                );
+                            }
                         }
 
 
