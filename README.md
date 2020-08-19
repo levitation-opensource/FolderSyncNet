@@ -1,7 +1,8 @@
 ## Folder synchroniser
 Automatically and in realtime copies updated files from source folder to destination folder for backup purposes. It is also possible to enable bi-directional synchronisation. 
 
-State: Ready to use. Maintained and in active use.
+### State: 
+Ready to use. Maintained and in active use.
 
 ### Installation
 
