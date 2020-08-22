@@ -16,9 +16,9 @@ namespace FolderSync
     public static partial class FileExtensions
     {
         //https://stackoverflow.com/questions/18472867/checking-equality-for-two-byte-arrays/
-        public static bool BinaryEqual(Binary a1, Binary b1)
+        public static bool BinaryEqual(Binary a, Binary b)
         {
-            return a1.Equals(b1);
+            return a.Equals(b);
         }
 
         public static async Task<byte[]> ReadAllBytesAsync(string path, CancellationToken cancellationToken = default(CancellationToken))
@@ -32,8 +32,9 @@ namespace FolderSync
                 useAsync: true
             ))
             {
-                byte[] result = new byte[stream.Length];
-                await stream.ReadAsync(result, 0, (int)stream.Length, cancellationToken);
+                var len = (int)stream.Length;    //NB! the lenght might change during the code execution, so need to save it into separate variable
+                byte[] result = new byte[len];
+                await stream.ReadAsync(result, 0, len, cancellationToken);
                 return result;
             }
         }

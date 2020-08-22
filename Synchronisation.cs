@@ -76,5 +76,41 @@ namespace FolderSync
             var lockHandle = await lockEntry.LockEntry.LockAsync(cancellationToken);
             return new LockDictReleaser(name, lockEntry, lockHandle, this);
         }
+
+        public sealed class MultiLockDictReleaser : IDisposable
+        {
+            private readonly LockDictReleaser[] Releasers;
+
+            public MultiLockDictReleaser(params LockDictReleaser[] releasers)
+            {
+                this.Releasers = releasers;
+            }
+
+            public void Dispose()
+            {
+                foreach (var releaser in Releasers)
+                {
+                    if (releaser != null)   //NB!
+                        releaser.Dispose();
+                }
+            }
+        }
+
+        public async Task<MultiLockDictReleaser> LockAsync(string name1, string name2, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            var names = new List<string>()
+                            {
+                                name1,
+                                name2
+                            };
+
+            //NB! in order to avoid deadlocks, always take the locks in deterministic order
+            names.Sort(StringComparer.InvariantCultureIgnoreCase);
+
+            var releaser1 = await Global.FileOperationLocks.LockAsync(names[0], cancellationToken);
+            var releaser2 = name1 != name2 ? await Global.FileOperationLocks.LockAsync(names[1], cancellationToken) : null;
+
+            return new MultiLockDictReleaser(releaser1, releaser2);
+        }
     }
 }
