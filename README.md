@@ -10,5 +10,8 @@ Ready to use. Maintained and in active use.
     * Update the settings in appsettings.json according to your needs
     * Build the project
     * In the build folder launch FolderSync.bat
+
+
+[![Analytics](https://ga-beacon.appspot.com/UA-351728-28/FolderSyncNet/README.md?pixel)](https://github.com/igrigorik/ga-beacon)   
     
     
