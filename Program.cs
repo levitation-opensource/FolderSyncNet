@@ -384,14 +384,37 @@ namespace FolderSync
         public static async Task DeleteFile(string fullName, Context context)
         {
             try
-            {
-                if (File.Exists(fullName + "~"))
-#pragma warning disable SEC0116 //Warning	SEC0116	Unvalidated file paths are passed to a file delete API, which can allow unauthorized file system operations (e.g. read, write, delete) to be performed on unintended server files.
-                    File.Delete(fullName + "~");
-#pragma warning restore SEC0116
+            {                
+                while (true)
+                {
+                    context.Token.ThrowIfCancellationRequested();
 
-                if (File.Exists(fullName))
-                    File.Move(fullName, fullName + "~");
+                    try
+                    {
+                        if (File.Exists(fullName + "~"))
+                        {
+#pragma warning disable SEC0116 //Warning	SEC0116	Unvalidated file paths are passed to a file delete API, which can allow unauthorized file system operations (e.g. read, write, delete) to be performed on unintended server files.
+                            File.Delete(fullName + "~");
+#pragma warning restore SEC0116
+                        }
+
+                        if (File.Exists(fullName))
+                        {
+                            File.Move(fullName, fullName + "~");
+                        }
+
+                        return;
+                    }
+                    catch (IOException)
+                    {
+                        //retry after delay
+#if !NOASYNC
+                        await Task.Delay(1000, context.Token);     //TODO: config file?
+#else
+                        context.Token.WaitHandle.WaitOne(1000);
+#endif
+                    }
+                }
             }
             catch (Exception ex)
             {
