@@ -441,7 +441,10 @@ namespace FolderSync
             var synchroniserSaveDate = GetSynchroniserSaveDate(fullName);
             var fileTime = GetFileTime(fullName);
 
-            if (fileTime > synchroniserSaveDate.AddSeconds(3))     //NB! ignore if the file changed during 3 seconds after converter save   //TODO!! config
+            if (
+                !Global.Bidirectional   //no need to debounce BIDIRECTIONAL file save events when bidirectional save is disabled 
+                || fileTime > synchroniserSaveDate.AddSeconds(3)     //NB! ignore if the file changed during 3 seconds after bidirectional save   //TODO!! config
+            )
             {
                 var otherFullName = GetOtherFullName(fullName);
                 if (fileTime > GetFileTime(otherFullName))     //NB!

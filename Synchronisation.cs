@@ -1,6 +1,7 @@
 ﻿#define ASYNC
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Nito.AsyncEx;
@@ -51,6 +52,9 @@ namespace FolderSync
 
             lock (DictionaryAccessMutex)
             {
+                lockEntry.WaiterCount--;
+                Debug.Assert(lockEntry.WaiterCount >= 0);
+
                 if (lockEntry.WaiterCount == 0)   //NB!
                 {
                     LockQueueDictionary.Remove(name);
