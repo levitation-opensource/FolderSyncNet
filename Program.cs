@@ -564,7 +564,7 @@ namespace FolderSync
                         //NB! if file is renamed to cs~ or resx~ then that means there will be yet another write to same file, so lets skip this event here
                         if (!rfse.FileSystemInfo.FullName.EndsWith("~"))
                         {
-                            using (await Global.FileOperationLocks.LockAsync(rfse.FileSystemInfo.FullName, rfse.PreviousFileSystemInfo.FullName, context.Token))
+                            //using (await Global.FileOperationLocks.LockAsync(rfse.FileSystemInfo.FullName, rfse.PreviousFileSystemInfo.FullName, context.Token))  //comment-out: prevent deadlock
                             {
                                 await FileUpdated(rfse.FileSystemInfo.FullName, context);
                                 await FileDeleted(rfse.PreviousFileSystemInfo.FullName, context);

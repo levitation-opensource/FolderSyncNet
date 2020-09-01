@@ -112,8 +112,8 @@ namespace FolderSync
             //NB! in order to avoid deadlocks, always take the locks in deterministic order
             names.Sort(StringComparer.InvariantCultureIgnoreCase);
 
-            var releaser1 = await Global.FileOperationLocks.LockAsync(names[0], cancellationToken);
-            var releaser2 = name1 != name2 ? await Global.FileOperationLocks.LockAsync(names[1], cancellationToken) : null;
+            var releaser1 = await this.LockAsync(names[0], cancellationToken);
+            var releaser2 = name1 != name2 ? await this.LockAsync(names[1], cancellationToken) : null;
 
             return new MultiLockDictReleaser(releaser1, releaser2);
         }
