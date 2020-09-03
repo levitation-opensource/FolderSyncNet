@@ -10,8 +10,8 @@ namespace FolderSync
 {
     public class AsyncLockQueueDictionary
     {
-        //private readonly object DictionaryAccessMutex = new object();
-        private readonly SemaphoreSlim DictionaryAccessMutex = new SemaphoreSlim(1, 1);
+        private readonly object DictionaryAccessMutex = new object();
+        //private readonly SemaphoreSlim DictionaryAccessMutex = new SemaphoreSlim(1, 1);
         private readonly Dictionary<string, AsyncLockWithCount> LockQueueDictionary = new Dictionary<string, AsyncLockWithCount>();
 
         public sealed class AsyncLockWithCount
@@ -51,9 +51,9 @@ namespace FolderSync
         {
             lockHandle.Dispose();
 
-            //lock (DictionaryAccessMutex)
-            DictionaryAccessMutex.Wait();
-            try
+            lock (DictionaryAccessMutex)
+            //DictionaryAccessMutex.Wait();
+            //try
             {
                 lockEntry.WaiterCount--;
                 Debug.Assert(lockEntry.WaiterCount >= 0);
@@ -63,18 +63,20 @@ namespace FolderSync
                     LockQueueDictionary.Remove(name);
                 }
             }
-            finally
-            {
-                DictionaryAccessMutex.Release();
-            }
+            //finally
+            //{
+            //    DictionaryAccessMutex.Release();
+            //}
         }
 
         public async Task<LockDictReleaser> LockAsync(string name, CancellationToken cancellationToken = default(CancellationToken))
         {
             AsyncLockWithCount lockEntry;
-            //lock (DictionaryAccessMutex)
-            await DictionaryAccessMutex.WaitAsync(cancellationToken);
-            try
+#pragma warning disable PH_S023     //Message	PH_S023	Using the blocking synchronization mechanics of a monitor inside an async method is discouraged; use SemaphoreSlim instead.
+            lock (DictionaryAccessMutex)
+#pragma warning restore PH_S023
+            //await DictionaryAccessMutex.WaitAsync(cancellationToken);
+            //try
             {
                 if (!LockQueueDictionary.TryGetValue(name, out lockEntry))
                 {
@@ -86,10 +88,10 @@ namespace FolderSync
                     lockEntry.WaiterCount++;  //NB! must be done inside the lock and BEFORE waiting for the lock
                 }
             }
-            finally
-            {
-                DictionaryAccessMutex.Release();
-            }
+            //finally
+            //{
+            //    DictionaryAccessMutex.Release();
+            //}
 
             var lockHandle = await lockEntry.LockEntry.LockAsync(cancellationToken);
             return new LockDictReleaser(name, lockEntry, lockHandle, this);
