@@ -10,7 +10,8 @@ namespace FolderSync
 {
     public class AsyncLockQueueDictionary
     {
-        private readonly object DictionaryAccessMutex = new object();
+        //private readonly object DictionaryAccessMutex = new object();
+        private readonly SemaphoreSlim DictionaryAccessMutex = new SemaphoreSlim(1, 1);
         private readonly Dictionary<string, AsyncLockWithCount> LockQueueDictionary = new Dictionary<string, AsyncLockWithCount>();
 
         public sealed class AsyncLockWithCount
@@ -25,12 +26,12 @@ namespace FolderSync
             }
         }
 
-        public sealed class LockDictReleaser : IDisposable
+        public sealed class LockDictReleaser : IDisposable  //TODO: implement IAsyncDisposable in .NET 5.0
         {
-            public readonly string Name;
-            public readonly AsyncLockWithCount LockEntry;
-            public readonly IDisposable LockHandle;
-            public readonly AsyncLockQueueDictionary AsyncLockQueueDictionary;
+            private readonly string Name;
+            private readonly AsyncLockWithCount LockEntry;
+            private readonly IDisposable LockHandle;
+            private readonly AsyncLockQueueDictionary AsyncLockQueueDictionary;
 
             internal LockDictReleaser(string name, AsyncLockWithCount lockEntry, IDisposable lockHandle, AsyncLockQueueDictionary asyncLockQueueDictionary)
             {
@@ -50,7 +51,9 @@ namespace FolderSync
         {
             lockHandle.Dispose();
 
-            lock (DictionaryAccessMutex)
+            //lock (DictionaryAccessMutex)
+            DictionaryAccessMutex.Wait();
+            try
             {
                 lockEntry.WaiterCount--;
                 Debug.Assert(lockEntry.WaiterCount >= 0);
@@ -60,12 +63,18 @@ namespace FolderSync
                     LockQueueDictionary.Remove(name);
                 }
             }
+            finally
+            {
+                DictionaryAccessMutex.Release();
+            }
         }
 
         public async Task<LockDictReleaser> LockAsync(string name, CancellationToken cancellationToken = default(CancellationToken))
         {
             AsyncLockWithCount lockEntry;
-            lock (DictionaryAccessMutex)
+            //lock (DictionaryAccessMutex)
+            await DictionaryAccessMutex.WaitAsync(cancellationToken);
+            try
             {
                 if (!LockQueueDictionary.TryGetValue(name, out lockEntry))
                 {
@@ -77,12 +86,16 @@ namespace FolderSync
                     lockEntry.WaiterCount++;  //NB! must be done inside the lock and BEFORE waiting for the lock
                 }
             }
+            finally
+            {
+                DictionaryAccessMutex.Release();
+            }
 
             var lockHandle = await lockEntry.LockEntry.LockAsync(cancellationToken);
             return new LockDictReleaser(name, lockEntry, lockHandle, this);
         }
 
-        public sealed class MultiLockDictReleaser : IDisposable
+        public sealed class MultiLockDictReleaser : IDisposable  //TODO: implement IAsyncDisposable in .NET 5.0
         {
             private readonly LockDictReleaser[] Releasers;
 
