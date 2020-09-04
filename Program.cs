@@ -247,7 +247,12 @@ namespace FolderSync
 
                         if (
                             Global.EnableHistory 
-                            && Global.MirrorWatchedExtension.ToUpperInvariant() != Global.HistoryWatchedExtension.ToUpperInvariant()    //NB!
+                            && 
+                            (
+                                !Global.EnableMirror
+                                ||
+                                Global.MirrorWatchedExtension.ToUpperInvariant() != Global.HistoryWatchedExtension.ToUpperInvariant()    //NB!
+                            )
                         )
                         {
                             foreach (var fileInfo in new DirectoryInfo(Global.SrcPath)
