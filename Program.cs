@@ -974,7 +974,7 @@ namespace FolderSync
             //NB! detect whether the file actually changed
             var otherFileData = File.Exists(otherFullName)
                 //@"\\?\" prefix is needed for reading from long paths: https://stackoverflow.com/questions/44888844/directorynotfoundexception-when-using-long-paths-in-net-4-7
-                ? await FileExtensions.ReadAllBytesAsync(@"\\?\" + otherFullName, context.Token) 
+                ? await FileExtensions.ReadAllBytesAsync(@"\\?\" + otherFullName, context.Token)    //TODO: optimisation: no need to read the bytes in case the file lenghts are different
                 : null;
 
             if (
