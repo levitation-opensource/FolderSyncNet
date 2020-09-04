@@ -984,7 +984,9 @@ namespace FolderSync
             {
                 await DeleteFile(otherFullName, context);
 
-                Directory.CreateDirectory(Path.GetDirectoryName(otherFullName));
+                var otherDirName = Path.GetDirectoryName(otherFullName);
+                if (!Directory.Exists(otherDirName))
+                    Directory.CreateDirectory(otherDirName);
 
                 //@"\\?\" prefix is needed for writing to long paths: https://stackoverflow.com/questions/44888844/directorynotfoundexception-when-using-long-paths-in-net-4-7
                 await FileExtensions.WriteAllBytesAsync(@"\\?\" + otherFullName, fileData, context.Token);
