@@ -4,6 +4,58 @@ Automatically and in realtime copies updated files from source folder to destina
 ### State
 Ready to use. Maintained and in active use.
 
+### Example configuration illustrating the capabilities of the software:
+
+	{
+		"Files": {
+			"SrcPath": "C:\\yourpath\\yourproject\\",
+
+			"EnableMirror": true,
+			"Bidirectional": false,
+			"MirrorDestPath": "C:\\yourpath\\yourproject-backup\\",
+
+			"EnableHistory": true,
+			"HistoryDestPath": "C:\\yourpath\\yourproject-history\\",
+			"HistoryVersionFormat": "timestamp_before_ext",
+			"___VersionFormatOptions": "prefix_timestamp | timestamp_before_ext | sufix_timestamp",
+			"HistoryVersionSeparator": ".",
+
+			"MirrorWatchedExtension": "*",
+			"MirrorExcludedExtensions": [
+				"*~",
+				"tmp"
+			],
+			"MirrorIgnorePathsStartingWith": [
+			],
+			"MirrorIgnorePathsContaining": [
+				"\\db.lock",
+				"\\Logs\\",
+				"\\node_modules\\",
+				"\\wwwroot\\dist\\"
+			],
+
+			"HistoryWatchedExtension": "*",
+			"HistoryExcludedExtensions": [
+				"*~",
+				"tmp"
+			],
+			"HistoryIgnorePathsStartingWith": [
+			],
+			"HistoryIgnorePathsContaining": [
+				".localhistory\\",
+				".vshistory\\",
+				"\\bin\\",
+				"\\obj\\",
+				"\\db.lock",
+				"\\sqlite3\\",
+				"\\Logs\\",
+				"\\node_modules\\",
+				"\\wwwroot\\dist\\"
+			]
+		}
+	}
+
+
 ### Installation
 
     * Copy appsettings.example.json to appsettings.json
