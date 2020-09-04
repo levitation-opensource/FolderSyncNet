@@ -305,7 +305,7 @@ namespace FolderSync
             {
                 fileInfos = srcDirInfo.GetFiles(searchPattern, SearchOption.TopDirectoryOnly);
             }
-            catch (DirectoryNotFoundException)
+            catch (Exception ex) when (ex is DirectoryNotFoundException || ex is UnauthorizedAccessException)
             {
                 //ignore exceptions due to long pathnames       //TODO: find a way to handle them
                 fileInfos = Array.Empty<FileInfo>();
@@ -323,7 +323,7 @@ namespace FolderSync
             {
                 dirInfos = srcDirInfo.GetDirectories("*", SearchOption.TopDirectoryOnly);
             }
-            catch (DirectoryNotFoundException)
+            catch (Exception ex) when (ex is DirectoryNotFoundException || ex is UnauthorizedAccessException)
             {
                 //ignore exceptions due to long pathnames       //TODO: find a way to handle them
                 dirInfos = Array.Empty<DirectoryInfo>();
