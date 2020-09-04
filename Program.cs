@@ -218,72 +218,61 @@ namespace FolderSync
                     watch.Start();
 
 
-                    if (true)
+                    var initialSyncMessageContext = new Context(
+                        eventObj: null,
+                        token: new CancellationToken(),
+                        forHistory: false
+                    );
+
+
+                    await ConsoleWatch.AddMessage(ConsoleColor.White, "Doing initial synchronisation...", initialSyncMessageContext);
+
+                    ConsoleWatch.DoingInitialSync = true;   //NB!
+
+
+
+                    //1. Do initial synchronisation from src to dest folder   //TODO: config for enabling and ordering of this operation
+                    if (Global.EnableHistory)
                     {
-                        var initialSyncMessageContext = new Context(
-                            eventObj: null,
-                            token: new CancellationToken(),
-                            forHistory: false
-                        );
-
-
-                        await ConsoleWatch.AddMessage(ConsoleColor.White, "Doing initial synchronisation...", initialSyncMessageContext);
-
-                        ConsoleWatch.DoingInitialSync = true;   //NB!
-
-                        //1. Do initial synchronisation from src to dest folder   //TODO: config for enabling and ordering of this operation
-                        if (Global.EnableMirror)
+                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Global.SrcPath), "*." + Global.HistoryWatchedExtension, forHistory: true))
                         {
-                            foreach (var fileInfo in new DirectoryInfo(Global.SrcPath)
-                                                        .GetFiles("*." + Global.MirrorWatchedExtension, SearchOption.AllDirectories))
-                            {
-                                await ConsoleWatch.OnAddedAsync
-                                (
-                                    new DummyFileSystemEvent(fileInfo),
-                                    new CancellationToken()
-                                );
-                            }
-                        }
-
-                        if (
-                            Global.EnableHistory 
-                            && 
+                            await ConsoleWatch.OnAddedAsync
                             (
-                                !Global.EnableMirror
-                                ||
-                                Global.MirrorWatchedExtension.ToUpperInvariant() != Global.HistoryWatchedExtension.ToUpperInvariant()    //NB!
-                            )
-                        )
-                        {
-                            foreach (var fileInfo in new DirectoryInfo(Global.SrcPath)
-                                                    .GetFiles("*." + Global.HistoryWatchedExtension, SearchOption.AllDirectories))
-                            {
-                                await ConsoleWatch.OnAddedAsync
-                                (
-                                    new DummyFileSystemEvent(fileInfo),
-                                    new CancellationToken()
-                                );
-                            }
+                                new DummyFileSystemEvent(fileInfo),
+                                new CancellationToken()
+                            );
                         }
-
-                        if (Global.BidirectionalMirror)
-                        {
-                            //2. Do initial synchronisation from dest to src folder   //TODO: config for enabling and ordering of this operation
-                            foreach (var fileInfo in new DirectoryInfo(Global.MirrorDestPath)
-                                                    .GetFiles("*." + Global.MirrorWatchedExtension, SearchOption.AllDirectories))
-                            {
-                                await ConsoleWatch.OnAddedAsync
-                                (
-                                    new DummyFileSystemEvent(fileInfo),
-                                    new CancellationToken()
-                                );
-                            }
-                        }
-
-
-                        ConsoleWatch.DoingInitialSync = false;   //NB!
-                        await ConsoleWatch.AddMessage(ConsoleColor.White, "Done initial synchronisation...", initialSyncMessageContext);
                     }
+
+                    if (Global.EnableMirror)
+                    {
+                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Global.SrcPath), "*." + Global.MirrorWatchedExtension, forHistory: false))
+                        {
+                            await ConsoleWatch.OnAddedAsync
+                            (
+                                new DummyFileSystemEvent(fileInfo),
+                                new CancellationToken()
+                            );
+                        }
+                    }
+
+                    if (Global.BidirectionalMirror)
+                    {
+                        //2. Do initial synchronisation from dest to src folder   //TODO: config for enabling and ordering of this operation
+                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Global.MirrorDestPath), "*." + Global.MirrorWatchedExtension, forHistory: false))
+                        {
+                            await ConsoleWatch.OnAddedAsync
+                            (
+                                new DummyFileSystemEvent(fileInfo),
+                                new CancellationToken()
+                            );
+                        }
+                    }
+
+
+
+                    ConsoleWatch.DoingInitialSync = false;   //NB!
+                    await ConsoleWatch.AddMessage(ConsoleColor.White, "Done initial synchronisation...", initialSyncMessageContext);
 
 
                     //listen for the Ctrl+C 
@@ -304,6 +293,81 @@ namespace FolderSync
                 WriteException(ex);
             }
         }
+
+        private static IEnumerable<FileInfo> ProcessSubDirs(DirectoryInfo srcDirInfo, string searchPattern, bool forHistory, int recursionLevel = 0)
+        {
+#if false //this built-in functio will throw IOException in case some subfolder is an invalid reparse point
+            return new DirectoryInfo(sourceDir)
+                .GetFiles(searchPattern, SearchOption.AllDirectories);
+#else
+            FileInfo[] fileInfos;
+            try
+            {
+                fileInfos = srcDirInfo.GetFiles(searchPattern, SearchOption.TopDirectoryOnly);
+            }
+            catch (DirectoryNotFoundException)
+            {
+                //ignore exceptions due to long pathnames       //TODO: find a way to handle them
+                fileInfos = Array.Empty<FileInfo>();
+            }
+
+            foreach (var fileInfo in fileInfos)
+            {
+                yield return fileInfo;
+            }
+
+
+            DirectoryInfo[] dirInfos;
+#pragma warning disable S2327   //Warning	S2327	Combine this 'try' with the one starting on line XXX.
+            try
+            {
+                dirInfos = srcDirInfo.GetDirectories("*", SearchOption.TopDirectoryOnly);
+            }
+            catch (DirectoryNotFoundException)
+            {
+                //ignore exceptions due to long pathnames       //TODO: find a way to handle them
+                dirInfos = Array.Empty<DirectoryInfo>();
+            }
+#pragma warning restore S2327
+
+            foreach (var dirInfo in dirInfos)
+            {
+                //TODO: option to follow reparse points
+                if ((dirInfo.Attributes & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint)
+                    continue;
+
+
+                var nonFullNameInvariant = ConsoleWatch.GetNonFullName(dirInfo.FullName) + Path.PathSeparator;
+                if (!forHistory)
+                {
+                    if (
+                        Global.MirrorIgnorePathsStartingWith.Any(x => nonFullNameInvariant.StartsWith(x))
+                        || Global.MirrorIgnorePathsContaining.Any(x => nonFullNameInvariant.Contains(x))
+                    )
+                    {
+                        continue;
+                    }
+                }
+                else
+                {
+                    if (
+                        Global.HistoryIgnorePathsStartingWith.Any(x => nonFullNameInvariant.StartsWith(x))
+                        || Global.HistoryIgnorePathsContaining.Any(x => nonFullNameInvariant.Contains(x))
+                    )
+                    {
+                        continue;
+                    }
+                }
+
+
+                var subDirFileInfos = ProcessSubDirs(dirInfo, searchPattern, forHistory, recursionLevel + 1);
+                foreach (var subDirFileInfo in subDirFileInfos)
+                {
+                    yield return subDirFileInfo;
+                }
+            }   //foreach (var dirInfo in dirInfos)
+#endif
+        }   //private static IEnumerable<FileInfo> ProcessSubDirs(DirectoryInfo srcDirInfo, string searchPattern, bool forHistory, int recursionLevel = 0)
 
         private static void WriteException(Exception ex)
         {
@@ -352,7 +416,9 @@ namespace FolderSync
             }
         }
 
+#pragma warning disable CA1068  //should take CancellationToken as the last parameter
         public Context(IFileSystemEvent eventObj, CancellationToken token, bool forHistory)
+#pragma warning restore CA1068
         {
             Event = eventObj;
             Token = token;
@@ -546,8 +612,18 @@ namespace FolderSync
 
         public static bool NeedsUpdate(string fullName, bool forHistory)
         {
+            if (
+                (!Global.EnableMirror && !forHistory)
+                || (!Global.EnableHistory && forHistory)
+            )
+            {
+                return false;
+            }
+
             if (DoingInitialSync)
+            {
                 return true;
+            }
 
             var synchroniserSaveDate = GetBidirectionalSynchroniserSaveDate(fullName);
             var fileTime = GetFileTime(fullName);
@@ -622,6 +698,14 @@ namespace FolderSync
 
         private static bool IsWatchedFile(string fullName, bool forHistory)
         {
+            if (
+                (!Global.EnableMirror && !forHistory)
+                || (!Global.EnableHistory && forHistory)
+            )
+            {
+                return false;
+            }
+
             var fullNameInvariant = fullName.ToUpperInvariant();
 
             if (
