@@ -37,6 +37,7 @@ Ready to use. Maintained and in active use.
 			"HistoryWatchedExtension": "*",
 			"HistoryExcludedExtensions": [
 				"*~",
+				"bak",
 				"tmp"
 			],
 			"HistoryIgnorePathsStartingWith": [
