@@ -33,7 +33,7 @@ namespace FolderSync
         public static bool EnableMirror = true;
         public static bool BidirectionalMirror = false;
 
-        public static string MirrorWatchedExtension = "*";
+        public static List<string> MirrorWatchedExtension = new List<string>() { "*" };
 
         public static List<string> MirrorExcludedExtensions = new List<string>() { "*~", "tmp" };
         public static List<string> MirrorIgnorePathsStartingWith = new List<string>();
@@ -44,7 +44,7 @@ namespace FolderSync
 
 
         public static bool EnableHistory = false;
-        public static string HistoryWatchedExtension = "*";
+        public static List<string> HistoryWatchedExtension = new List<string>() { "*" };
 
         public static string HistoryVersionFormat = "PREFIX_TIMESTAMP";
         public static string HistoryVersionSeparator = "$";
@@ -133,7 +133,7 @@ namespace FolderSync
 
             Global.MirrorDestPath = fileConfig["MirrorDestPath"] ?? fileConfig["DestPath"];
 
-            Global.MirrorWatchedExtension = fileConfig["MirrorWatchedExtension"] ?? fileConfig["WatchedExtension"] ?? "*";
+            Global.MirrorWatchedExtension = fileConfig.GetSection("MirrorWatchedExtension").GetChildren().Select(c => c.Value.ToUpperInvariant()).ToList();
 
             //this would need Microsoft.Extensions.Configuration and Microsoft.Extensions.Configuration.Binder packages
             //Global.ExcludedExtensions = fileConfig.GetSection("ExcludedExtensions").Get<string[]>();
@@ -148,7 +148,7 @@ namespace FolderSync
 
             Global.HistoryDestPath = fileConfig["HistoryDestPath"];
 
-            Global.HistoryWatchedExtension = fileConfig["HistoryWatchedExtension"] ?? "*";
+            Global.HistoryWatchedExtension = fileConfig.GetSection("HistoryWatchedExtension").GetChildren().Select(c => c.Value.ToUpperInvariant()).ToList();
 
             Global.HistoryVersionFormat = fileConfig["HistoryVersionFormat"]?.ToUpperInvariant() ?? "TIMESTAMP_BEFORE_EXT";
             Global.HistoryVersionSeparator = fileConfig["HistoryVersionSeparator"] ?? ".";
@@ -234,7 +234,7 @@ namespace FolderSync
                     //1. Do initial synchronisation from src to dest folder   //TODO: config for enabling and ordering of this operation
                     if (Global.EnableHistory)
                     {
-                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Global.SrcPath), "*." + Global.HistoryWatchedExtension, forHistory: true))
+                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Global.SrcPath), "*." + (Global.HistoryWatchedExtension.Count == 1 ? Global.HistoryWatchedExtension.Single() : "*"), forHistory: true))
                         {
                             await ConsoleWatch.OnAddedAsync
                             (
@@ -246,7 +246,7 @@ namespace FolderSync
 
                     if (Global.EnableMirror)
                     {
-                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Global.SrcPath), "*." + Global.MirrorWatchedExtension, forHistory: false))
+                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Global.SrcPath), "*." + (Global.MirrorWatchedExtension.Count == 1 ? Global.MirrorWatchedExtension.Single() : "*"), forHistory: false))
                         {
                             await ConsoleWatch.OnAddedAsync
                             (
@@ -259,7 +259,7 @@ namespace FolderSync
                     if (Global.BidirectionalMirror)
                     {
                         //2. Do initial synchronisation from dest to src folder   //TODO: config for enabling and ordering of this operation
-                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Global.MirrorDestPath), "*." + Global.MirrorWatchedExtension, forHistory: false))
+                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Global.MirrorDestPath), "*." + (Global.MirrorWatchedExtension.Count == 1 ? Global.MirrorWatchedExtension.Single() : "*"), forHistory: false))
                         {
                             await ConsoleWatch.OnAddedAsync
                             (
@@ -712,8 +712,8 @@ namespace FolderSync
                 !forHistory
                 &&
                 (
-                    fullNameInvariant.EndsWith("." + Global.MirrorWatchedExtension.ToUpperInvariant())
-                    || Global.MirrorWatchedExtension == "*"
+                    Global.MirrorWatchedExtension.Any(x => fullNameInvariant.EndsWith("." + x.ToUpperInvariant()))
+                    || Global.MirrorWatchedExtension.Contains("*")
                 )
                 &&
                 Global.MirrorExcludedExtensions.All(x =>
@@ -744,8 +744,8 @@ namespace FolderSync
                 forHistory
                 &&
                 (
-                    fullNameInvariant.EndsWith("." + Global.HistoryWatchedExtension.ToUpperInvariant())
-                    || Global.HistoryWatchedExtension == "*"
+                    Global.HistoryWatchedExtension.Any(x => fullNameInvariant.EndsWith("." + x.ToUpperInvariant()))
+                    || Global.HistoryWatchedExtension.Contains("*")
                 )
                 &&
                 Global.HistoryExcludedExtensions.All(x =>
