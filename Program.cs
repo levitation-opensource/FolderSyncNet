@@ -124,49 +124,47 @@ namespace FolderSync
 
             var fileConfig = config.GetSection("Files");
 
-            Global.SrcPath = fileConfig["SrcPath"];
+            Global.SrcPath = fileConfig.GetTextUpperOnWindows("SrcPath");
 
 
 
-            Global.EnableMirror = fileConfig["EnableMirror"]?.ToUpperInvariant() != "FALSE";   //default is true
-            Global.BidirectionalMirror = Global.EnableMirror && fileConfig["Bidirectional"]?.ToUpperInvariant() == "TRUE";   //default is false
+            Global.EnableMirror = fileConfig.GetTextUpper("EnableMirror") != "FALSE";   //default is true
+            Global.BidirectionalMirror = Global.EnableMirror && fileConfig.GetTextUpper("Bidirectional") == "TRUE";   //default is false
 
-            Global.MirrorDestPath = fileConfig["MirrorDestPath"] ?? fileConfig["DestPath"];
+            Global.MirrorDestPath = fileConfig.GetTextUpperOnWindows("MirrorDestPath", "DestPath");
 
-            Global.MirrorWatchedExtension = fileConfig.GetSection("MirrorWatchedExtension").GetChildren().Select(c => c.Value.ToUpperInvariant()).ToList();
-
-            //this would need Microsoft.Extensions.Configuration and Microsoft.Extensions.Configuration.Binder packages
-            //Global.ExcludedExtensions = fileConfig.GetSection("ExcludedExtensions").Get<string[]>();
-            Global.MirrorExcludedExtensions = fileConfig.GetSection("MirrorExcludedExtensions").GetChildren().Select(c => c.Value.ToUpperInvariant()).ToList();   //NB! .ToUpperInvariant()
-
-            Global.MirrorIgnorePathsStartingWith = fileConfig.GetSection("MirrorIgnorePathsStartingWith").GetChildren().Select(c => c.Value.ToUpperInvariant()).ToList();   //NB! .ToUpperInvariant()
-            Global.MirrorIgnorePathsContaining = fileConfig.GetSection("MirrorIgnorePathsContaining").GetChildren().Select(c => c.Value.ToUpperInvariant()).ToList();   //NB! .ToUpperInvariant()
-
-
-
-            Global.EnableHistory = fileConfig["EnableHistory"]?.ToUpperInvariant() == "TRUE";   //default is false
-
-            Global.HistoryDestPath = fileConfig["HistoryDestPath"];
-
-            Global.HistoryWatchedExtension = fileConfig.GetSection("HistoryWatchedExtension").GetChildren().Select(c => c.Value.ToUpperInvariant()).ToList();
-
-            Global.HistoryVersionFormat = fileConfig["HistoryVersionFormat"]?.ToUpperInvariant() ?? "TIMESTAMP_BEFORE_EXT";
-            Global.HistoryVersionSeparator = fileConfig["HistoryVersionSeparator"] ?? ".";
+            Global.MirrorWatchedExtension = fileConfig.GetListUpperOnWindows("MirrorWatchedExtensions", "MirrorWatchedExtension", "WatchedExtensions", "WatchedExtension");
 
             //this would need Microsoft.Extensions.Configuration and Microsoft.Extensions.Configuration.Binder packages
-            //Global.ExcludedExtensions = fileConfig.GetSection("ExcludedExtensions").Get<string[]>();
-            Global.HistoryExcludedExtensions = fileConfig.GetSection("HistoryExcludedExtensions").GetChildren().Select(c => c.Value.ToUpperInvariant()).ToList();   //NB! .ToUpperInvariant()
+            Global.MirrorExcludedExtensions = fileConfig.GetListUpperOnWindows("MirrorExcludedExtensions", "MirrorExcludedExtension", "ExcludedExtensions", "ExcludedExtension");   //NB! UpperOnWindows
 
-            Global.HistoryIgnorePathsStartingWith = fileConfig.GetSection("HistoryIgnorePathsStartingWith").GetChildren().Select(c => c.Value.ToUpperInvariant()).ToList();   //NB! .ToUpperInvariant()
-            Global.HistoryIgnorePathsContaining = fileConfig.GetSection("HistoryIgnorePathsContaining").GetChildren().Select(c => c.Value.ToUpperInvariant()).ToList();   //NB! .ToUpperInvariant()
+            Global.MirrorIgnorePathsStartingWith = fileConfig.GetListUpperOnWindows("MirrorIgnorePathsStartingWith", "IgnorePathsStartingWith");   //NB! UpperOnWindows
+            Global.MirrorIgnorePathsContaining = fileConfig.GetListUpperOnWindows("MirrorIgnorePathsContaining", "MirrorIgnorePathContaining", "IgnorePathsContaining", "IgnorePathContaining");   //NB! UpperOnWindows
+
+
+
+            Global.EnableHistory = fileConfig.GetTextUpper("EnableHistory") == "TRUE";   //default is false
+
+            Global.HistoryDestPath = fileConfig.GetTextUpperOnWindows("HistoryDestPath");
+
+            Global.HistoryWatchedExtension = fileConfig.GetListUpperOnWindows("HistoryWatchedExtensions", "HistoryWatchedExtension", "WatchedExtensions", "WatchedExtension");
+
+            Global.HistoryVersionFormat = fileConfig.GetTextUpper("HistoryVersionFormat") ?? "TIMESTAMP_BEFORE_EXT";
+            Global.HistoryVersionSeparator = fileConfig.GetText("HistoryVersionSeparator") ?? ".";  //NB! no uppercase transformation here
+
+            //this would need Microsoft.Extensions.Configuration and Microsoft.Extensions.Configuration.Binder packages
+            Global.HistoryExcludedExtensions = fileConfig.GetListUpperOnWindows("HistoryExcludedExtensions", "HistoryExcludedExtension", "ExcludedExtensions", "ExcludedExtension");   //NB! UpperOnWindows
+
+            Global.HistoryIgnorePathsStartingWith = fileConfig.GetListUpper("HistoryIgnorePathsStartingWith", "HistoryIgnorePathStartingWith", "IgnorePathsStartingWith", "IgnorePathStartingWith");   //NB! UpperOnWindows
+            Global.HistoryIgnorePathsContaining = fileConfig.GetListUpperOnWindows("HistoryIgnorePathsContaining", "HistoryIgnorePathContaining", "IgnorePathsContaining", "IgnorePathContaining");   //NB! UpperOnWindows
 
 
 
             var pathHashes = "";
             //TODO!!! allow multiple instances with differet settings
-            pathHashes += "_" + GetHashString(Global.SrcPath.ToUpperInvariant());
-            pathHashes += "_" + GetHashString(Global.MirrorDestPath?.ToUpperInvariant() ?? "");
-            pathHashes += "_" + GetHashString(Global.HistoryDestPath?.ToUpperInvariant() ?? "");
+            pathHashes += "_" + GetHashString(Global.SrcPath);
+            pathHashes += "_" + GetHashString(Global.MirrorDestPath ?? "");
+            pathHashes += "_" + GetHashString(Global.HistoryDestPath ?? "");
 
             //NB! prevent multiple instances from starting on same directories
             using (Mutex mutex = new Mutex(false, "Global\\FolderSync_" + pathHashes))
@@ -488,11 +486,13 @@ namespace FolderSync
 
         public static string GetNonFullName(string fullName)
         {
-            if (fullName.ToUpperInvariant().StartsWith(Global.MirrorDestPath.ToUpperInvariant()))
+            var fullNameInvariant = fullName.ToUpperInvariantOnWindows();
+
+            if (fullNameInvariant.StartsWith(Global.MirrorDestPath))
             {
                 return fullName.Substring(Global.MirrorDestPath.Length);
             }
-            else if (fullName.ToUpperInvariant().StartsWith(Global.SrcPath.ToUpperInvariant()))
+            else if (fullNameInvariant.StartsWith(Global.SrcPath))
             {
                 return fullName.Substring(Global.SrcPath.Length);
             }
@@ -504,11 +504,12 @@ namespace FolderSync
 
         public static string GetOtherFullName(string fullName, bool forHistory)
         {
+            var fullNameInvariant = fullName.ToUpperInvariantOnWindows();
             var nonFullName = GetNonFullName(fullName);
 
             if (forHistory)
             {
-                if (fullName.ToUpperInvariant().StartsWith(Global.SrcPath.ToUpperInvariant()))
+                if (fullNameInvariant.StartsWith(Global.SrcPath))
                 {
                     var srcFileDate = GetFileTime(fullName);
 
@@ -543,11 +544,11 @@ namespace FolderSync
             }
             else
             {
-                if (fullName.ToUpperInvariant().StartsWith(Global.MirrorDestPath.ToUpperInvariant()))
+                if (fullNameInvariant.StartsWith(Global.MirrorDestPath))
                 {
                     return Path.Combine(Global.SrcPath, nonFullName);
                 }
-                else if (fullName.ToUpperInvariant().StartsWith(Global.SrcPath.ToUpperInvariant()))
+                else if (fullNameInvariant.StartsWith(Global.SrcPath))
                 {
                     return Path.Combine(Global.MirrorDestPath, nonFullName);
                 }
@@ -706,13 +707,13 @@ namespace FolderSync
                 return false;
             }
 
-            var fullNameInvariant = fullName.ToUpperInvariant();
+            var fullNameInvariant = fullName.ToUpperInvariantOnWindows();
 
             if (
                 !forHistory
                 &&
                 (
-                    Global.MirrorWatchedExtension.Any(x => fullNameInvariant.EndsWith("." + x.ToUpperInvariant()))
+                    Global.MirrorWatchedExtension.Any(x => fullNameInvariant.EndsWith("." + x))
                     || Global.MirrorWatchedExtension.Contains("*")
                 )
                 &&
@@ -744,7 +745,7 @@ namespace FolderSync
                 forHistory
                 &&
                 (
-                    Global.HistoryWatchedExtension.Any(x => fullNameInvariant.EndsWith("." + x.ToUpperInvariant()))
+                    Global.HistoryWatchedExtension.Any(x => fullNameInvariant.EndsWith("." + x))
                     || Global.HistoryWatchedExtension.Contains("*")
                 )
                 &&
