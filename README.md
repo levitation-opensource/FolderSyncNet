@@ -20,7 +20,9 @@ Ready to use. Maintained and in active use.
 			"___VersionFormatOptions": "prefix_timestamp | timestamp_before_ext | sufix_timestamp",
 			"HistoryVersionSeparator": ".",
 
-			"MirrorWatchedExtension": "*",
+			"MirrorWatchedExtensions": [
+				"*"
+			],
 			"MirrorExcludedExtensions": [
 				"*~",
 				"tmp"
@@ -34,7 +36,9 @@ Ready to use. Maintained and in active use.
 				"\\wwwroot\\dist\\"
 			],
 
-			"HistoryWatchedExtension": "*",
+			"HistoryWatchedExtensions": [
+				"*"
+			],
 			"HistoryExcludedExtensions": [
 				"*~",
 				"bak",
