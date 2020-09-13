@@ -96,6 +96,8 @@ namespace FolderSync
 
         public static List<string> GetList(this IConfigurationSection config)
         {
+            //TODO: detect also missing key and use a default value in such case
+
             if (config.Value != null)
                 return new List<string>() { config.Value };
             else

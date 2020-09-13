@@ -47,10 +47,10 @@ namespace FolderSync
         public static bool EnableHistory = false;
         public static List<string> HistoryWatchedExtension = new List<string>() { "*" };
 
-        public static string HistoryVersionFormat = "PREFIX_TIMESTAMP";
-        public static string HistoryVersionSeparator = "$";
+        public static string HistoryVersionFormat = "TIMESTAMP_BEFORE_EXT";
+        public static string HistoryVersionSeparator = ".";
 
-        public static List<string> HistoryExcludedExtensions = new List<string>() { "*~", "tmp" };
+        public static List<string> HistoryExcludedExtensions = new List<string>() { "*~", "bak", "tmp" };
         public static List<string> HistoryIgnorePathsStartingWith = new List<string>();
         public static List<string> HistoryIgnorePathsContaining = new List<string>();
 
@@ -1093,19 +1093,24 @@ namespace FolderSync
             }
         }   //public static async Task SaveFileModifications(string fullName, byte[] fileData, byte[] originalData, Context context)
 
-        public static long CheckDiskSpace(string path)
+        public static long? CheckDiskSpace(string path)
         {
-            long freeBytes;
+            long? freeBytes = null;
 
-            if (!ConfigParser.IsWindows)
+            try     //NB! on some drives (for example, RAM drives, GetDiskFreeSpaceEx does not work
             {
                 //NB! DriveInfo works on paths well in Linux    //TODO: what about Mac?
                 var drive = new DriveInfo(path);
                 freeBytes = drive.AvailableFreeSpace;
             }
-            else
+            catch (ArgumentException)
             {
-                WindowsDllImport.GetDiskFreeSpaceEx(path, out freeBytes, out var _, out var __);
+                if (ConfigParser.IsWindows)
+                {
+                    long freeBytesOut;
+                    if (WindowsDllImport.GetDiskFreeSpaceEx(path, out freeBytesOut, out var _, out var __))
+                        freeBytes = freeBytesOut;
+                }
             }
 
             return freeBytes;
