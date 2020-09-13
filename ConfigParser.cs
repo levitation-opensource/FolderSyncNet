@@ -25,6 +25,23 @@ namespace FolderSync
                 return text;
         }
 
+        public static long? GetLong(this IConfiguration config, params string[] sectionKeyAlternateNames)
+        {
+            foreach (var sectionKeyAlternateName in sectionKeyAlternateNames)
+            {
+                var text = config[sectionKeyAlternateName];
+                if (text != null)
+                {
+                    //long result;
+                    //if (long.TryParse(text, out result))
+                    //    return result;
+                    return long.Parse(text);    //NB! if the parameter exists then it must be in a proper numeric format
+                }
+            }
+
+            return null;
+        }
+
         public static string GetTextUpperOnWindows(this IConfiguration config, params string[] sectionKeyAlternateNames)
         {
             if (IsWindows)
@@ -61,7 +78,7 @@ namespace FolderSync
         public static List<string> GetListUpper(this IConfiguration config, params string[] sectionKeyAlternateNames)
         {
             return config.GetList(sectionKeyAlternateNames)
-                .Select(x => x.ToUpperInvariant())
+                .Select(x => x?.ToUpperInvariant())
                 .ToList();
         }
 

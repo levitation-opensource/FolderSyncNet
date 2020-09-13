@@ -17,7 +17,9 @@ namespace FolderSync
         public sealed class AsyncLockWithCount
         {
             public readonly AsyncLock LockEntry;
+#pragma warning disable S1104   //Warning	S1104	Make this field 'private' and encapsulate it in a 'public' property.
             public int WaiterCount;
+#pragma warning restore S1104
 
             public AsyncLockWithCount()
             {

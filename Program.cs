@@ -11,6 +11,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -54,6 +55,12 @@ namespace FolderSync
         public static List<string> HistoryIgnorePathsContaining = new List<string>();
 
         public static string HistoryDestPath = "";
+
+
+
+        public static long SrcPathMinFreeSpace = 0;
+        public static long MirrorDestPathMinFreeSpace = 0;
+        public static long HistoryDestPathMinFreeSpace = 0;
 
 
 
@@ -160,6 +167,12 @@ namespace FolderSync
 
 
 
+            Global.SrcPathMinFreeSpace = fileConfig.GetLong("SrcPathMinFreeSpace") ?? 0;
+            Global.MirrorDestPathMinFreeSpace = fileConfig.GetLong("MirrorDestPathMinFreeSpace") ?? 0;
+            Global.HistoryDestPathMinFreeSpace = fileConfig.GetLong("HistoryDestPathMinFreeSpace") ?? 0;
+
+
+
             var pathHashes = "";
             //TODO!!! allow multiple instances with differet settings
             pathHashes += "_" + GetHashString(Global.SrcPath);
@@ -219,7 +232,8 @@ namespace FolderSync
                     var initialSyncMessageContext = new Context(
                         eventObj: null,
                         token: new CancellationToken(),
-                        forHistory: false
+                        forHistory: false,   //unused here
+                        isSrcPath: false   //unused here
                     );
 
 
@@ -402,9 +416,10 @@ namespace FolderSync
 
     internal class Context
     {
-        public IFileSystemEvent Event;
-        public CancellationToken Token;
-        public bool ForHistory;
+        public readonly IFileSystemEvent Event;
+        public readonly CancellationToken Token;
+        public readonly bool ForHistory;
+        public readonly bool IsSrcPath;
 
         public DateTime Time
         {
@@ -415,12 +430,13 @@ namespace FolderSync
         }
 
 #pragma warning disable CA1068  //should take CancellationToken as the last parameter
-        public Context(IFileSystemEvent eventObj, CancellationToken token, bool forHistory)
+        public Context(IFileSystemEvent eventObj, CancellationToken token, bool forHistory, bool isSrcPath)
 #pragma warning restore CA1068
         {
             Event = eventObj;
             Token = token;
             ForHistory = forHistory;
+            IsSrcPath = isSrcPath;
         }
     }
 
@@ -445,7 +461,9 @@ namespace FolderSync
         private static readonly AsyncLockQueueDictionary FileEventLocks = new AsyncLockQueueDictionary();
 
 
+#pragma warning disable S1118   //Warning	S1118	Hide this public constructor by making it 'protected'.
         public ConsoleWatch(IWatcher3 watch)
+#pragma warning restore S1118
         {
             //_consoleColor = Console.ForegroundColor;
 
@@ -484,6 +502,11 @@ namespace FolderSync
             await AddMessage(ConsoleColor.Red, message.ToString(), context);
         }
 
+        public static bool IsSrcPath(string fullNameInvariant)
+        {
+            return fullNameInvariant.StartsWith(Global.SrcPath);
+        }
+
         public static string GetNonFullName(string fullName)
         {
             var fullNameInvariant = fullName.ToUpperInvariantOnWindows();
@@ -492,7 +515,7 @@ namespace FolderSync
             {
                 return fullName.Substring(Global.MirrorDestPath.Length);
             }
-            else if (fullNameInvariant.StartsWith(Global.SrcPath))
+            else if (IsSrcPath(fullNameInvariant))
             {
                 return fullName.Substring(Global.SrcPath.Length);
             }
@@ -509,7 +532,7 @@ namespace FolderSync
 
             if (forHistory)
             {
-                if (fullNameInvariant.StartsWith(Global.SrcPath))
+                if (IsSrcPath(fullNameInvariant))
                 {
                     var srcFileDate = GetFileTime(fullName);
 
@@ -548,7 +571,7 @@ namespace FolderSync
                 {
                     return Path.Combine(Global.SrcPath, nonFullName);
                 }
-                else if (fullNameInvariant.StartsWith(Global.SrcPath))
+                else if (IsSrcPath(fullNameInvariant))
                 {
                     return Path.Combine(Global.MirrorDestPath, nonFullName);
                 }
@@ -781,10 +804,20 @@ namespace FolderSync
 #pragma warning disable AsyncFixer01
         private static async Task OnRenamedAsync(IRenamedFileSystemEvent fse, CancellationToken token)
         {
+            //NB! create separate context to properly handle disk free space checks on cases where file is renamed from src path to dest path (not a recommended practice though!)
+
+            var previousFullNameInvariant = fse.PreviousFileSystemInfo.FullName.ToUpperInvariantOnWindows();
+            var previousContext = new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(previousFullNameInvariant));
+
+            var newFullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows();
+            var newPathIsSrcPath = IsSrcPath(newFullNameInvariant);
+
+
             var contexts = new Context[] {
-                new Context(fse, token, forHistory: false),
-                new Context(fse, token, forHistory: true)
+                new Context(fse, token, forHistory: false, isSrcPath: newPathIsSrcPath),
+                new Context(fse, token, forHistory: true, isSrcPath: newPathIsSrcPath)
             };
+
 
             foreach (var context in contexts)
             {
@@ -792,18 +825,46 @@ namespace FolderSync
                 {
                     if (fse.IsFile)
                     {
-                        if (IsWatchedFile(fse.PreviousFileSystemInfo.FullName, context.ForHistory)
-                            || IsWatchedFile(fse.FileSystemInfo.FullName, context.ForHistory))
+                        var prevFileIsWatchedFile = IsWatchedFile(fse.PreviousFileSystemInfo.FullName, context.ForHistory);
+                        var newFileIsWatchedFile = IsWatchedFile(fse.FileSystemInfo.FullName, context.ForHistory);
+
+                        if (prevFileIsWatchedFile
+                            || newFileIsWatchedFile)
                         {
                             await AddMessage(ConsoleColor.Cyan, $"[{(fse.IsFile ? "F" : "D")}][R]:{fse.PreviousFileSystemInfo.FullName} > {fse.FileSystemInfo.FullName}", context);
 
-                            //NB! if file is renamed to cs~ or resx~ then that means there will be yet another write to same file, so lets skip this event here
+                            //NB! if file is renamed to cs~ or resx~ then that means there will be yet another write to same file, so lets skip this event here - NB! skip the event here, including delete event of the previous file
                             if (!fse.FileSystemInfo.FullName.EndsWith("~"))
                             {
                                 //using (await Global.FileOperationLocks.LockAsync(rfse.FileSystemInfo.FullName, rfse.PreviousFileSystemInfo.FullName, context.Token))  //comment-out: prevent deadlock
                                 {
-                                    await FileUpdated(fse.FileSystemInfo.FullName, context);
-                                    await FileDeleted(fse.PreviousFileSystemInfo.FullName, context);
+                                    if (newFileIsWatchedFile)
+                                    {
+                                        await FileUpdated(fse.FileSystemInfo.FullName, context);
+                                    }
+
+                                    if (prevFileIsWatchedFile)
+                                    {
+                                        if (
+                                            !context.ForHistory     //history files have a different name format than the original file names and would not cause a undefined behaviour
+                                            && newFileIsWatchedFile     //both files were watched files
+                                            && previousContext.IsSrcPath != context.IsSrcPath    
+                                            && 
+                                            (
+                                                Global.BidirectionalMirror      //move in either direction between src and mirrorDest
+                                                || previousContext.IsSrcPath    //src -> mirrorDest move
+                                            )
+                                        )
+                                        {
+                                            //the file was moved from one watched path to another watched path, which is illegal, lets ignore the file move
+
+                                            await AddMessage(ConsoleColor.Red, $"Ignoring file delete in the source path since the move was to the other managed path : {fse.PreviousFileSystemInfo.FullName} > {fse.FileSystemInfo.FullName}", previousContext);
+                                        }
+                                        else
+                                        {
+                                            await FileDeleted(fse.PreviousFileSystemInfo.FullName, previousContext);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -824,9 +885,11 @@ namespace FolderSync
 
         private static async Task OnRemovedAsync(IFileSystemEvent fse, CancellationToken token)
         {
+            var fullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows();
+
             var contexts = new Context[] {
-                new Context(fse, token, forHistory: false),
-                new Context(fse, token, forHistory: true)
+                new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(fullNameInvariant)),
+                new Context(fse, token, forHistory: true, isSrcPath: true)
             };
 
             foreach (var context in contexts)
@@ -859,9 +922,11 @@ namespace FolderSync
 
         public static async Task OnAddedAsync(IFileSystemEvent fse, CancellationToken token)
         {
+            var fullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows();
+
             var contexts = new Context[] {
-                new Context(fse, token, forHistory: false),
-                new Context(fse, token, forHistory: true)
+                new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(fullNameInvariant)),
+                new Context(fse, token, forHistory: true, isSrcPath: true)
             };
 
             foreach (var context in contexts)
@@ -894,9 +959,11 @@ namespace FolderSync
 
         private static async Task OnTouchedAsync(IFileSystemEvent fse, CancellationToken token)
         {
+            var fullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows();
+
             var contexts = new Context[] {
-                new Context(fse, token, forHistory: false),
-                new Context(fse, token, forHistory: true)
+                new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(fullNameInvariant)),
+                new Context(fse, token, forHistory: true, isSrcPath: true)
             };
 
             foreach (var context in contexts)
@@ -983,6 +1050,16 @@ namespace FolderSync
                 || !FileExtensions.BinaryEqual(otherFileData, fileData)
             )
             {
+                var minDiskFreeSpace = context.ForHistory ? Global.HistoryDestPathMinFreeSpace : (context.IsSrcPath ? Global.MirrorDestPathMinFreeSpace : Global.SrcPathMinFreeSpace);
+                var actualFreeSpace = minDiskFreeSpace > 0 ? CheckDiskSpace(otherFullName) : 0;
+                if (minDiskFreeSpace > actualFreeSpace)
+                {
+                    await AddMessage(ConsoleColor.Red, $"Error synchronising updates from file {fullName} : minDiskFreeSpace > actualFreeSpace : {minDiskFreeSpace} > {actualFreeSpace}", context);
+
+                    return;
+                }
+
+
                 await DeleteFile(otherFullName, context);
 
                 var otherDirName = Path.GetDirectoryName(otherFullName);
@@ -998,7 +1075,7 @@ namespace FolderSync
 
                 await AddMessage(ConsoleColor.Magenta, $"Synchronised updates from file {fullName}", context);
             }
-            else if (false)
+            else if (false)     //TODO: config
             {
                 //touch the file
                 var now = DateTime.UtcNow;  //NB! compute common now for ConverterSavedFileDates
@@ -1016,6 +1093,35 @@ namespace FolderSync
             }
         }   //public static async Task SaveFileModifications(string fullName, byte[] fileData, byte[] originalData, Context context)
 
+        public static long CheckDiskSpace(string path)
+        {
+            long freeBytes;
+
+            if (!ConfigParser.IsWindows)
+            {
+                //NB! DriveInfo works on paths well in Linux    //TODO: what about Mac?
+                var drive = new DriveInfo(path);
+                freeBytes = drive.AvailableFreeSpace;
+            }
+            else
+            {
+                WindowsDllImport.GetDiskFreeSpaceEx(path, out freeBytes, out var _, out var __);
+            }
+
+            return freeBytes;
+        }
+
 #pragma warning restore AsyncFixer01
+    }
+
+    internal static class WindowsDllImport  //keep in a separate class just in case to ensure that dllimport is not attempted during application loading under non-Windows OS
+    {
+        //https://stackoverflow.com/questions/61037184/find-out-free-and-total-space-on-a-network-unc-path-in-netcore-3-x
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetDiskFreeSpaceEx(string lpDirectoryName,
+            out long lpFreeBytesAvailable,
+            out long lpTotalNumberOfBytes,
+            out long lpTotalNumberOfFreeBytes);
     }
 }
