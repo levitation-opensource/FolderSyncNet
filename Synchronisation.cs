@@ -8,20 +8,23 @@ using Nito.AsyncEx;
 
 namespace FolderSync
 {
-    public class AsyncLockQueueDictionary
+    public class AsyncLockQueueDictionary<KeyT>
+        where KeyT : IComparable<KeyT>, IEquatable<KeyT>
     {
+        private static readonly bool IsStringDictionary = typeof(KeyT) == typeof(string);
+
         private readonly object DictionaryAccessMutex = new object();
         //private readonly SemaphoreSlim DictionaryAccessMutex = new SemaphoreSlim(1, 1);
-        private readonly Dictionary<string, AsyncLockWithCount> LockQueueDictionary = new Dictionary<string, AsyncLockWithCount>();
+        private readonly Dictionary<KeyT, AsyncLockWithWaiterCount> LockQueueDictionary = new Dictionary<KeyT, AsyncLockWithWaiterCount>();
 
-        public sealed class AsyncLockWithCount
+        public sealed class AsyncLockWithWaiterCount
         {
             public readonly AsyncLock LockEntry;
 #pragma warning disable S1104   //Warning	S1104	Make this field 'private' and encapsulate it in a 'public' property.
             public int WaiterCount;
 #pragma warning restore S1104
 
-            public AsyncLockWithCount()
+            public AsyncLockWithWaiterCount()
             {
                 this.LockEntry = new AsyncLock();
                 this.WaiterCount = 1;
@@ -30,28 +33,48 @@ namespace FolderSync
 
         public sealed class LockDictReleaser : IDisposable  //TODO: implement IAsyncDisposable in .NET 5.0
         {
-            private readonly string Name;
-            private readonly AsyncLockWithCount LockEntry;
+            private readonly KeyT Name;
+            private readonly AsyncLockWithWaiterCount LockEntry;
+#if !NOASYNC
             private readonly IDisposable LockHandle;
-            private readonly AsyncLockQueueDictionary AsyncLockQueueDictionary;
+#endif
+            private readonly AsyncLockQueueDictionary<KeyT> AsyncLockQueueDictionary;
 
-            internal LockDictReleaser(string name, AsyncLockWithCount lockEntry, IDisposable lockHandle, AsyncLockQueueDictionary asyncLockQueueDictionary)
+#if NOASYNC
+            internal LockDictReleaser(KeyT name, AsyncLockWithWaiterCount lockEntry, AsyncLockQueueDictionary<KeyT> asyncLockQueueDictionary)
+#else 
+            internal LockDictReleaser(KeyT name, AsyncLockWithWaiterCount lockEntry, IDisposable lockHandle, AsyncLockQueueDictionary<KeyT> asyncLockQueueDictionary)
+#endif
             {
                 this.Name = name;
                 this.LockEntry = lockEntry;
+#if !NOASYNC
                 this.LockHandle = lockHandle;
+#endif
                 this.AsyncLockQueueDictionary = asyncLockQueueDictionary;
             }
 
             public void Dispose()
             {
+#if NOASYNC
+                this.AsyncLockQueueDictionary.ReleaseLock(this.Name, this.LockEntry);
+#else
                 this.AsyncLockQueueDictionary.ReleaseLock(this.Name, this.LockEntry, this.LockHandle);
+#endif
             }
         }
 
-        private void ReleaseLock(string name, AsyncLockWithCount lockEntry, IDisposable lockHandle)
+#if NOASYNC
+        private void ReleaseLock(KeyT name, AsyncLockWithWaiterCount lockEntry)
+#else
+        private void ReleaseLock(KeyT name, AsyncLockWithWaiterCount lockEntry, IDisposable lockHandle)
+#endif
         {
+#if NOASYNC
+            Monitor.Exit(lockEntry.LockEntry);
+#else
             lockHandle.Dispose();
+#endif
 
             lock (DictionaryAccessMutex)
             //DictionaryAccessMutex.Wait();
@@ -71,9 +94,9 @@ namespace FolderSync
             //}
         }
 
-        public async Task<LockDictReleaser> LockAsync(string name, CancellationToken cancellationToken = default(CancellationToken))
+        public async Task<LockDictReleaser> LockAsync(KeyT name, CancellationToken cancellationToken = default(CancellationToken))
         {
-            AsyncLockWithCount lockEntry;
+            AsyncLockWithWaiterCount lockEntry;
 #pragma warning disable PH_S023     //Message	PH_S023	Using the blocking synchronization mechanics of a monitor inside an async method is discouraged; use SemaphoreSlim instead.
             lock (DictionaryAccessMutex)
 #pragma warning restore PH_S023
@@ -82,7 +105,7 @@ namespace FolderSync
             {
                 if (!LockQueueDictionary.TryGetValue(name, out lockEntry))
                 {
-                    lockEntry = new AsyncLockWithCount();                    
+                    lockEntry = new AsyncLockWithWaiterCount();
                     LockQueueDictionary.Add(name, lockEntry);
                 }
                 else
@@ -95,8 +118,15 @@ namespace FolderSync
             //    DictionaryAccessMutex.Release();
             //}
 
+#if NOASYNC
+#pragma warning disable PH_P006  //warning PH_P006 Favor the use of the lock-statement instead of the use of Monitor.Enter when no timeouts are needed.
+            Monitor.Enter(lockEntry.LockEntry);
+#pragma warning restore PH_P006
+            return new LockDictReleaser(name, lockEntry, this);
+#else
             var lockHandle = await lockEntry.LockEntry.LockAsync(cancellationToken);
             return new LockDictReleaser(name, lockEntry, lockHandle, this);
+#endif
         }
 
         public sealed class MultiLockDictReleaser : IDisposable  //TODO: implement IAsyncDisposable in .NET 5.0
@@ -118,19 +148,22 @@ namespace FolderSync
             }
         }
 
-        public async Task<MultiLockDictReleaser> LockAsync(string name1, string name2, CancellationToken cancellationToken = default(CancellationToken))
+        public async Task<MultiLockDictReleaser> LockAsync(KeyT name1, KeyT name2, CancellationToken cancellationToken = default(CancellationToken))
         {
-            var names = new List<string>()
+            var names = new List<KeyT>()
                             {
                                 name1,
                                 name2
                             };
 
             //NB! in order to avoid deadlocks, always take the locks in deterministic order
-            names.Sort(StringComparer.InvariantCultureIgnoreCase);
+            if (IsStringDictionary)
+                names.Sort(StringComparer.InvariantCultureIgnoreCase as IComparer<KeyT>);
+            else
+                names.Sort();
 
             var releaser1 = await this.LockAsync(names[0], cancellationToken);
-            var releaser2 = name1 != name2 ? await this.LockAsync(names[1], cancellationToken) : null;
+            var releaser2 = !name1.Equals(name2) ? await this.LockAsync(names[1], cancellationToken) : null;
 
             return new MultiLockDictReleaser(releaser1, releaser2);
         }

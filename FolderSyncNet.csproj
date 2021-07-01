@@ -4,7 +4,7 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{7D900E57-16D0-4671-AE44-FBC9FE3CD639}</ProjectGuid>
+    <ProjectGuid>{BF6A0339-9346-4024-9AFB-451FAB2F21C6}</ProjectGuid>
     <OutputType>Exe</OutputType>
     <RootNamespace>FolderSync</RootNamespace>
     <AssemblyName>FolderSync</AssemblyName>
@@ -115,6 +115,7 @@
     <Reference Include="System.Globalization.Calendars, Version=4.0.2.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>packages\System.Globalization.Calendars.4.3.0\lib\net46\System.Globalization.Calendars.dll</HintPath>
     </Reference>
+    <Reference Include="System.Windows.Forms" />
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.IO.Compression.ZipFile, Version=4.0.2.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
@@ -183,6 +184,7 @@
   <ItemGroup>
     <Content Include="copyrights.txt" />
     <Content Include="icon\iconfinder_Mobile_Share_Content_Sync_Transfer_Data_4014679 combined.ico" />
+    <Content Include="todo.txt" />
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
