@@ -1,5 +1,5 @@
 ## Folder synchroniser with file history functionality
-Automatically and in realtime copies updated files from source folder to destination folder for backup purposes. It is also possible to enable bi-directional synchronisation, and/or automatic generation of history of old file versions. 
+Automatically and in realtime copies updated files from source folder to destination folder for backup purposes. It is also possible to turn on bi-directional synchronisation, and/or automatic generation of version history of old file versions. 
 
 ### State
 Ready to use. Maintained and in active use.
