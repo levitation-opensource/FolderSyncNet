@@ -10,6 +10,9 @@ Ready to use. Maintained and in active use.
 		"Files": {
 			"SrcPath": "C:\\yourpath\\yourproject\\",
 
+			"CaseSensitiveFilenames": null,
+			"DoNotCompareFileContent": false,
+
 			"EnableMirror": true,
 			"Bidirectional": false,
 			"MirrorDestPath": "C:\\yourpath\\yourproject-backup\\",
