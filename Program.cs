@@ -35,6 +35,8 @@ namespace FolderSync
 
         public static bool EnableMirror = true;
         public static bool BidirectionalMirror = false;
+        public static bool DoNotCompareFileContent = false;
+        public static bool? CaseSensitiveFilenames = null;   //null: default behaviour depending on OS
 
         public static List<string> MirrorWatchedExtension = new List<string>() { "*" };
 
@@ -133,39 +135,46 @@ namespace FolderSync
 
             var fileConfig = config.GetSection("Files");
 
-            Global.SrcPath = fileConfig.GetTextUpperOnWindows("SrcPath");
+
+
+            Global.DoNotCompareFileContent = fileConfig.GetTextUpper("DoNotCompareFileContent") == "TRUE";   //default is false
+            if (!string.IsNullOrWhiteSpace(fileConfig.GetTextUpper("CaseSensitiveFilenames")))
+                Global.CaseSensitiveFilenames = fileConfig.GetTextUpper("CaseSensitiveFilenames") == "TRUE";   //default is false
+
+
+            Global.SrcPath = fileConfig.GetTextUpperOnWindows(Global.CaseSensitiveFilenames, "SrcPath");
 
 
 
             Global.EnableMirror = fileConfig.GetTextUpper("EnableMirror") != "FALSE";   //default is true
             Global.BidirectionalMirror = Global.EnableMirror && fileConfig.GetTextUpper("Bidirectional") == "TRUE";   //default is false
 
-            Global.MirrorDestPath = fileConfig.GetTextUpperOnWindows("MirrorDestPath", "DestPath");
+            Global.MirrorDestPath = fileConfig.GetTextUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorDestPath", "DestPath");
 
-            Global.MirrorWatchedExtension = fileConfig.GetListUpperOnWindows("MirrorWatchedExtensions", "MirrorWatchedExtension", "WatchedExtensions", "WatchedExtension");
+            Global.MirrorWatchedExtension = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorWatchedExtensions", "MirrorWatchedExtension", "WatchedExtensions", "WatchedExtension");
 
             //this would need Microsoft.Extensions.Configuration and Microsoft.Extensions.Configuration.Binder packages
-            Global.MirrorExcludedExtensions = fileConfig.GetListUpperOnWindows("MirrorExcludedExtensions", "MirrorExcludedExtension", "ExcludedExtensions", "ExcludedExtension");   //NB! UpperOnWindows
+            Global.MirrorExcludedExtensions = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorExcludedExtensions", "MirrorExcludedExtension", "ExcludedExtensions", "ExcludedExtension");   //NB! UpperOnWindows
 
-            Global.MirrorIgnorePathsStartingWith = fileConfig.GetListUpperOnWindows("MirrorIgnorePathsStartingWith", "IgnorePathsStartingWith");   //NB! UpperOnWindows
-            Global.MirrorIgnorePathsContaining = fileConfig.GetListUpperOnWindows("MirrorIgnorePathsContaining", "MirrorIgnorePathContaining", "IgnorePathsContaining", "IgnorePathContaining");   //NB! UpperOnWindows
+            Global.MirrorIgnorePathsStartingWith = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorIgnorePathsStartingWith", "IgnorePathsStartingWith");   //NB! UpperOnWindows
+            Global.MirrorIgnorePathsContaining = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorIgnorePathsContaining", "MirrorIgnorePathContaining", "IgnorePathsContaining", "IgnorePathContaining");   //NB! UpperOnWindows
 
 
 
             Global.EnableHistory = fileConfig.GetTextUpper("EnableHistory") == "TRUE";   //default is false
 
-            Global.HistoryDestPath = fileConfig.GetTextUpperOnWindows("HistoryDestPath");
+            Global.HistoryDestPath = fileConfig.GetTextUpperOnWindows(Global.CaseSensitiveFilenames, "HistoryDestPath");
 
-            Global.HistoryWatchedExtension = fileConfig.GetListUpperOnWindows("HistoryWatchedExtensions", "HistoryWatchedExtension", "WatchedExtensions", "WatchedExtension");
+            Global.HistoryWatchedExtension = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "HistoryWatchedExtensions", "HistoryWatchedExtension", "WatchedExtensions", "WatchedExtension");
 
             Global.HistoryVersionFormat = fileConfig.GetTextUpper("HistoryVersionFormat") ?? "TIMESTAMP_BEFORE_EXT";
             Global.HistoryVersionSeparator = fileConfig.GetText("HistoryVersionSeparator") ?? ".";  //NB! no uppercase transformation here
 
             //this would need Microsoft.Extensions.Configuration and Microsoft.Extensions.Configuration.Binder packages
-            Global.HistoryExcludedExtensions = fileConfig.GetListUpperOnWindows("HistoryExcludedExtensions", "HistoryExcludedExtension", "ExcludedExtensions", "ExcludedExtension");   //NB! UpperOnWindows
+            Global.HistoryExcludedExtensions = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "HistoryExcludedExtensions", "HistoryExcludedExtension", "ExcludedExtensions", "ExcludedExtension");   //NB! UpperOnWindows
 
             Global.HistoryIgnorePathsStartingWith = fileConfig.GetListUpper("HistoryIgnorePathsStartingWith", "HistoryIgnorePathStartingWith", "IgnorePathsStartingWith", "IgnorePathStartingWith");   //NB! UpperOnWindows
-            Global.HistoryIgnorePathsContaining = fileConfig.GetListUpperOnWindows("HistoryIgnorePathsContaining", "HistoryIgnorePathContaining", "IgnorePathsContaining", "IgnorePathContaining");   //NB! UpperOnWindows
+            Global.HistoryIgnorePathsContaining = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "HistoryIgnorePathsContaining", "HistoryIgnorePathContaining", "IgnorePathsContaining", "IgnorePathContaining");   //NB! UpperOnWindows
 
 
 
@@ -214,11 +223,11 @@ namespace FolderSync
                     //    }
                     //}
 
-                    watch.Add(new Request(Global.SrcPath, recursive: true));
+                    watch.Add(new Request(Extensions.GetLongPath(Global.SrcPath), recursive: true));
 
                     if (Global.BidirectionalMirror)
                     {
-                        watch.Add(new Request(Global.MirrorDestPath, recursive: true));
+                        watch.Add(new Request(Extensions.GetLongPath(Global.MirrorDestPath), recursive: true));
                     }
 
 
@@ -248,7 +257,7 @@ namespace FolderSync
                     //1. Do initial synchronisation from src to dest folder   //TODO: config for enabling and ordering of this operation
                     if (Global.EnableHistory)
                     {
-                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Global.SrcPath), "*." + (Global.HistoryWatchedExtension.Count == 1 ? Global.HistoryWatchedExtension.Single() : "*"), forHistory: true))
+                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Extensions.GetLongPath(Global.SrcPath)), "*." + (Global.HistoryWatchedExtension.Count == 1 ? Global.HistoryWatchedExtension.Single() : "*"), forHistory: true))
                         {
                             await ConsoleWatch.OnAddedAsync
                             (
@@ -260,7 +269,7 @@ namespace FolderSync
 
                     if (Global.EnableMirror)
                     {
-                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Global.SrcPath), "*." + (Global.MirrorWatchedExtension.Count == 1 ? Global.MirrorWatchedExtension.Single() : "*"), forHistory: false))
+                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Extensions.GetLongPath(Global.SrcPath)), "*." + (Global.MirrorWatchedExtension.Count == 1 ? Global.MirrorWatchedExtension.Single() : "*"), forHistory: false))
                         {
                             await ConsoleWatch.OnAddedAsync
                             (
@@ -273,7 +282,7 @@ namespace FolderSync
                     if (Global.BidirectionalMirror)
                     {
                         //2. Do initial synchronisation from dest to src folder   //TODO: config for enabling and ordering of this operation
-                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Global.MirrorDestPath), "*." + (Global.MirrorWatchedExtension.Count == 1 ? Global.MirrorWatchedExtension.Single() : "*"), forHistory: false))
+                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Extensions.GetLongPath(Global.MirrorDestPath)), "*." + (Global.MirrorWatchedExtension.Count == 1 ? Global.MirrorWatchedExtension.Single() : "*"), forHistory: false))
                         {
                             await ConsoleWatch.OnAddedAsync
                             (
@@ -550,20 +559,20 @@ namespace FolderSync
 
         public static bool IsSrcPath(string fullNameInvariant)
         {
-            return fullNameInvariant.StartsWith(Global.SrcPath);
+            return fullNameInvariant.StartsWith(Extensions.GetLongPath(Global.SrcPath));
         }
 
         public static string GetNonFullName(string fullName)
         {
-            var fullNameInvariant = fullName.ToUpperInvariantOnWindows();
+            var fullNameInvariant = fullName.ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
 
-            if (fullNameInvariant.StartsWith(Global.MirrorDestPath))
+            if (fullNameInvariant.StartsWith(Extensions.GetLongPath(Global.MirrorDestPath)))
             {
-                return fullName.Substring(Global.MirrorDestPath.Length);
+                return fullName.Substring(Extensions.GetLongPath(Global.MirrorDestPath).Length);
             }
             else if (IsSrcPath(fullNameInvariant))
             {
-                return fullName.Substring(Global.SrcPath.Length);
+                return fullName.Substring(Extensions.GetLongPath(Global.SrcPath).Length);
             }
             else
             {
@@ -573,7 +582,7 @@ namespace FolderSync
 
         public static string GetOtherFullName(string fullName, bool forHistory)
         {
-            var fullNameInvariant = fullName.ToUpperInvariantOnWindows();
+            var fullNameInvariant = fullName.ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
             var nonFullName = GetNonFullName(fullName);
 
             if (forHistory)
@@ -613,7 +622,7 @@ namespace FolderSync
             }
             else
             {
-                if (fullNameInvariant.StartsWith(Global.MirrorDestPath))
+                if (fullNameInvariant.StartsWith(Extensions.GetLongPath(Global.MirrorDestPath)))
                 {
                     return Path.Combine(Global.SrcPath, nonFullName);
                 }
@@ -631,7 +640,9 @@ namespace FolderSync
         public static async Task DeleteFile(string fullName, Context context)
         {
             try
-            {                
+            {
+                fullName = Extensions.GetLongPath(fullName);
+
                 while (true)
                 {
                     context.Token.ThrowIfCancellationRequested();
@@ -690,7 +701,7 @@ namespace FolderSync
                 return false;
             }
 
-            if (DoingInitialSync)
+            if (DoingInitialSync && !Global.DoNotCompareFileContent)
             {
                 return true;
             }
@@ -724,8 +735,7 @@ namespace FolderSync
                 var otherFullName = GetOtherFullName(fullName, context.ForHistory);
                 using (await Global.FileOperationLocks.LockAsync(fullName, otherFullName, context.Token))
                 {
-                    //@"\\?\" prefix is needed for reading from long paths: https://stackoverflow.com/questions/44888844/directorynotfoundexception-when-using-long-paths-in-net-4-7
-                    var fileData = await FileExtensions.ReadAllBytesAsync(@"\\?\" + fullName, context.Token);
+                    var fileData = await FileExtensions.ReadAllBytesAsync(Extensions.GetLongPath(fullName), context.Token);
                     var originalData = fileData;
 
                     //save without transformations
@@ -738,7 +748,7 @@ namespace FolderSync
         {
             if (IsWatchedFile(fullName, context.ForHistory))
             {
-                if (!File.Exists(fullName))  //NB! verify that the file is still deleted
+                if (!File.Exists(Extensions.GetLongPath(fullName)))  //NB! verify that the file is still deleted
                 {
                     var otherFullName = GetOtherFullName(fullName, context.ForHistory);
 
@@ -755,6 +765,8 @@ namespace FolderSync
         {
             try
             {
+                fullName = Extensions.GetLongPath(fullName);
+
                 if (File.Exists(fullName))
                     return File.GetLastWriteTimeUtc(fullName);
                 else
@@ -763,6 +775,23 @@ namespace FolderSync
             catch (FileNotFoundException)    //the file might have been deleted in the meanwhile
             {
                 return DateTime.MinValue;
+            }
+        }
+
+        private static long GetFileSize(string fullName)
+        {
+            try
+            {
+                fullName = Extensions.GetLongPath(fullName);
+
+                if (File.Exists(fullName))
+                    return new FileInfo(fullName).Length;
+                else
+                    return -1;
+            }
+            catch (FileNotFoundException)    //the file might have been deleted in the meanwhile
+            {
+                return -1;
             }
         }
 
@@ -776,7 +805,7 @@ namespace FolderSync
                 return false;
             }
 
-            var fullNameInvariant = fullName.ToUpperInvariantOnWindows();
+            var fullNameInvariant = fullName.ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
 
             if (
                 !forHistory
@@ -852,10 +881,10 @@ namespace FolderSync
         {
             //NB! create separate context to properly handle disk free space checks on cases where file is renamed from src path to dest path (not a recommended practice though!)
 
-            var previousFullNameInvariant = fse.PreviousFileSystemInfo.FullName.ToUpperInvariantOnWindows();
+            var previousFullNameInvariant = fse.PreviousFileSystemInfo.FullName.ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
             var previousContext = new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(previousFullNameInvariant));
 
-            var newFullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows();
+            var newFullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
             var newPathIsSrcPath = IsSrcPath(newFullNameInvariant);
 
 
@@ -931,7 +960,7 @@ namespace FolderSync
 
         private static async Task OnRemovedAsync(IFileSystemEvent fse, CancellationToken token)
         {
-            var fullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows();
+            var fullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
 
             var contexts = new Context[] {
                 new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(fullNameInvariant)),
@@ -968,7 +997,7 @@ namespace FolderSync
 
         public static async Task OnAddedAsync(IFileSystemEvent fse, CancellationToken token)
         {
-            var fullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows();
+            var fullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
 
             var contexts = new Context[] {
                 new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(fullNameInvariant)),
@@ -1005,7 +1034,7 @@ namespace FolderSync
 
         private static async Task OnTouchedAsync(IFileSystemEvent fse, CancellationToken token)
         {
-            var fullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows();
+            var fullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
 
             var contexts = new Context[] {
                 new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(fullNameInvariant)),
@@ -1018,7 +1047,7 @@ namespace FolderSync
                 {
                     if (
                         fse.IsFile
-                        && File.Exists(fse.FileSystemInfo.FullName)     //for some reason fse.IsFile is set even for folders
+                        && File.Exists(Extensions.GetLongPath(fse.FileSystemInfo.FullName))     //for some reason fse.IsFile is set even for folders
                     )
                     {
                         if (IsWatchedFile(fse.FileSystemInfo.FullName, context.ForHistory))
@@ -1094,22 +1123,36 @@ namespace FolderSync
         public static async Task SaveFileModifications(string fullName, byte[] fileData, byte[] originalData, Context context)
         {
             var otherFullName = GetOtherFullName(fullName, context.ForHistory);
+            var otherFileLength = GetFileSize(otherFullName);
 
 
             //NB! detect whether the file actually changed
-            var otherFileData = File.Exists(otherFullName)
-                //@"\\?\" prefix is needed for reading from long paths: https://stackoverflow.com/questions/44888844/directorynotfoundexception-when-using-long-paths-in-net-4-7
-                ? await FileExtensions.ReadAllBytesAsync(@"\\?\" + otherFullName, context.Token)    //TODO: optimisation: no need to read the bytes in case the file lenghts are different
+            var otherFileData = 
+                !Global.DoNotCompareFileContent 
+                    && File.Exists(Extensions.GetLongPath(otherFullName))
+                    && otherFileLength == fileData.Length   //optimisation
+                ? await FileExtensions.ReadAllBytesAsync(Extensions.GetLongPath(otherFullName), context.Token)    //TODO: optimisation: no need to read the bytes in case the file lenghts are different
                 : null;
 
             if (
-                (otherFileData?.Length ?? -1) != fileData.Length
-                || !FileExtensions.BinaryEqual(otherFileData, fileData)
+                (
+                    !Global.DoNotCompareFileContent
+                    &&
+                    (
+                        (otherFileData?.Length ?? -1) != fileData.Length
+                        || !FileExtensions.BinaryEqual(otherFileData, fileData)
+                    )
+                )
+                ||
+                (
+                    Global.DoNotCompareFileContent
+                    && otherFileLength != fileData.Length
+                )
             )
             {
                 var minDiskFreeSpace = context.ForHistory ? Global.HistoryDestPathMinFreeSpace : (context.IsSrcPath ? Global.MirrorDestPathMinFreeSpace : Global.SrcPathMinFreeSpace);
                 var actualFreeSpace = minDiskFreeSpace > 0 ? CheckDiskSpace(otherFullName) : 0;
-                if (minDiskFreeSpace > actualFreeSpace)
+                if (minDiskFreeSpace > actualFreeSpace - fileData.Length)
                 {
                     await AddMessage(ConsoleColor.Red, $"Error synchronising updates from file {fullName} : minDiskFreeSpace > actualFreeSpace : {minDiskFreeSpace} > {actualFreeSpace}", context);
 
@@ -1120,11 +1163,10 @@ namespace FolderSync
                 await DeleteFile(otherFullName, context);
 
                 var otherDirName = Path.GetDirectoryName(otherFullName);
-                if (!Directory.Exists(otherDirName))
-                    Directory.CreateDirectory(otherDirName);
+                if (!Directory.Exists(Extensions.GetLongPath(otherDirName)))
+                    Directory.CreateDirectory(Extensions.GetLongPath(otherDirName));
 
-                //@"\\?\" prefix is needed for writing to long paths: https://stackoverflow.com/questions/44888844/directorynotfoundexception-when-using-long-paths-in-net-4-7
-                await FileExtensions.WriteAllBytesAsync(@"\\?\" + otherFullName, fileData, context.Token);
+                await FileExtensions.WriteAllBytesAsync(Extensions.GetLongPath(otherFullName), fileData, context.Token);
 
                 var now = DateTime.UtcNow;  //NB! compute now after saving the file
                 BidirectionalSynchroniserSavedFileDates[otherFullName] = now;
@@ -1139,7 +1181,7 @@ namespace FolderSync
 
                 try
                 {
-                    File.SetLastWriteTimeUtc(otherFullName, now);
+                    File.SetLastWriteTimeUtc(Extensions.GetLongPath(otherFullName), now);
                 }
                 catch (Exception ex)
                 {
