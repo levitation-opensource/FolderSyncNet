@@ -69,6 +69,7 @@ namespace FolderSync
 
 
         internal static readonly AsyncLockQueueDictionary<string> FileOperationLocks = new AsyncLockQueueDictionary<string>();
+        internal static readonly AsyncSemaphore FileOperationSemaphore = new AsyncSemaphore(2);     //allow 2 concurrent file synchronisations: while one is finishing the write, the next one can start the read
     }
 #pragma warning restore S2223
 
@@ -735,11 +736,14 @@ namespace FolderSync
                 var otherFullName = GetOtherFullName(fullName, context.ForHistory);
                 using (await Global.FileOperationLocks.LockAsync(fullName, otherFullName, context.Token))
                 {
-                    var fileData = await FileExtensions.ReadAllBytesAsync(Extensions.GetLongPath(fullName), context.Token);
-                    var originalData = fileData;
+                    using (await Global.FileOperationSemaphore.LockAsync())
+                    { 
+                        var fileData = await FileExtensions.ReadAllBytesAsync(Extensions.GetLongPath(fullName), context.Token);
+                        var originalData = fileData;
 
-                    //save without transformations
-                    await ConsoleWatch.SaveFileModifications(fullName, fileData, originalData, context);
+                        //save without transformations
+                        await ConsoleWatch.SaveFileModifications(fullName, fileData, originalData, context);
+                    }
                 }
             }
         }
