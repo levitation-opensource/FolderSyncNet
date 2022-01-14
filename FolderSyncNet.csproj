@@ -8,7 +8,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>FolderSync</RootNamespace>
     <AssemblyName>FolderSync</AssemblyName>
-    <TargetFrameworkVersion>v4.6</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.7.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
@@ -83,6 +83,9 @@
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=9.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>..\..\AsyncToSyncCodeRoundtripSynchroniserMonitor\AsyncToSyncCodeRoundtripSynchroniserMonitorNet\packages\Newtonsoft.Json.9.0.1\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="Nito.AspNetBackgroundTasks, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>packages\Nito.AspNetBackgroundTasks.1.0.0\lib\net45\Nito.AspNetBackgroundTasks.dll</HintPath>
     </Reference>
     <Reference Include="Nito.AsyncEx.Coordination, Version=5.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\..\AsyncToSyncCodeRoundtripSynchroniserMonitor\AsyncToSyncCodeRoundtripSynchroniserMonitorNet\packages\Nito.AsyncEx.Coordination.5.0.0\lib\netstandard1.3\Nito.AsyncEx.Coordination.dll</HintPath>

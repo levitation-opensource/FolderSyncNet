@@ -9,6 +9,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -20,6 +21,7 @@ using System.Windows.Forms;
 using Microsoft.Extensions.Configuration;
 using myoddweb.directorywatcher;
 using myoddweb.directorywatcher.interfaces;
+using Nito.AspNetBackgroundTasks;
 using Nito.AsyncEx;
 
 namespace FolderSync
@@ -28,6 +30,7 @@ namespace FolderSync
     internal static class Global
     {
         public static IConfigurationRoot Configuration;
+        public static readonly CancellationTokenSource CancellationToken = new CancellationTokenSource();
 
 
         public static string SrcPath = "";
@@ -35,7 +38,16 @@ namespace FolderSync
 
         public static bool EnableMirror = true;
         public static bool BidirectionalMirror = false;
+        public static bool MirrorIgnoreSrcDeletions = false;
+        public static bool MirrorIgnoreDestDeletions = false;
+
+        public static bool UsePolling = false;
+        public static int PollingDelay = 60;
+
         public static bool DoNotCompareFileContent = false;
+        public static bool DoNotCompareFileDate = false;
+        public static bool DoNotCompareFileSize = false;
+
         public static bool? CaseSensitiveFilenames = null;   //null: default behaviour depending on OS
 
         public static List<string> MirrorWatchedExtension = new List<string>() { "*" };
@@ -73,35 +85,37 @@ namespace FolderSync
     }
 #pragma warning restore S2223
 
-    internal class Program
+    class DummyFileSystemEvent : IFileSystemEvent
     {
-        private class DummyFileSystemEvent : IFileSystemEvent
+        [DebuggerStepThrough]
+        public DummyFileSystemEvent(FileSystemInfo fileSystemInfo)
         {
-            public DummyFileSystemEvent(FileSystemInfo fileSystemInfo)
-            {
-                FileSystemInfo = fileSystemInfo;
-                FullName = fileSystemInfo.FullName;
-                Name = fileSystemInfo.Name;
-                Action = EventAction.Added;
-                Error = EventError.None;
-                DateTimeUtc = DateTime.UtcNow;
-                IsFile = true;
-            }
-
-            public FileSystemInfo FileSystemInfo { get; }
-            public string FullName { get; }
-            public string Name { get; }
-            public EventAction Action { get; }
-            public EventError Error { get; }
-            public DateTime DateTimeUtc { get; }
-            public bool IsFile { get; }
-
-            public bool Is(EventAction action)
-            {
-                return action == Action;
-            }
+            FileSystemInfo = fileSystemInfo;
+            FullName = fileSystemInfo.FullName;
+            Name = fileSystemInfo.Name;
+            Action = EventAction.Added;
+            Error = EventError.None;
+            DateTimeUtc = DateTime.UtcNow;
+            IsFile = true;
         }
 
+        public FileSystemInfo FileSystemInfo { [DebuggerStepThrough]get; }
+        public string FullName { [DebuggerStepThrough]get; }
+        public string Name { [DebuggerStepThrough]get; }
+        public EventAction Action { [DebuggerStepThrough]get; }
+        public EventError Error { [DebuggerStepThrough]get; }
+        public DateTime DateTimeUtc { [DebuggerStepThrough]get; }
+        public bool IsFile { [DebuggerStepThrough]get; }
+
+        [DebuggerStepThrough]
+        public bool Is(EventAction action)
+        {
+            return action == Action;
+        }
+    }
+
+    internal class Program
+    {
         private static byte[] GetHash(string inputString)
         {
 #pragma warning disable SCS0006     //Warning	SCS0006	Weak hashing function
@@ -139,16 +153,27 @@ namespace FolderSync
 
 
             Global.DoNotCompareFileContent = fileConfig.GetTextUpper("DoNotCompareFileContent") == "TRUE";   //default is false
+            Global.DoNotCompareFileDate = fileConfig.GetTextUpper("DoNotCompareFileDate") == "TRUE";   //default is false
+            Global.DoNotCompareFileSize = fileConfig.GetTextUpper("DoNotCompareFileSize") == "TRUE";   //default is false
+
             if (!string.IsNullOrWhiteSpace(fileConfig.GetTextUpper("CaseSensitiveFilenames")))
                 Global.CaseSensitiveFilenames = fileConfig.GetTextUpper("CaseSensitiveFilenames") == "TRUE";   //default is false
 
 
-            Global.SrcPath = fileConfig.GetTextUpperOnWindows(Global.CaseSensitiveFilenames, "SrcPath");
 
+            Global.SrcPath = fileConfig.GetTextUpperOnWindows(Global.CaseSensitiveFilenames, "SrcPath");
+            
 
 
             Global.EnableMirror = fileConfig.GetTextUpper("EnableMirror") != "FALSE";   //default is true
             Global.BidirectionalMirror = Global.EnableMirror && fileConfig.GetTextUpper("Bidirectional") == "TRUE";   //default is false
+            Global.MirrorIgnoreSrcDeletions = Global.EnableMirror && fileConfig.GetTextUpper("MirrorIgnoreSrcDeletions") == "TRUE";   //default is false
+            Global.MirrorIgnoreDestDeletions = Global.EnableMirror && fileConfig.GetTextUpper("MirrorIgnoreDestDeletions") == "TRUE";   //default is false
+
+            Global.UsePolling = fileConfig.GetTextUpper("UsePolling") == "TRUE";   //default is false
+            Global.PollingDelay = (int?)fileConfig.GetLong("PollingDelay") ?? Global.PollingDelay;
+
+
 
             Global.MirrorDestPath = fileConfig.GetTextUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorDestPath", "DestPath");
 
@@ -212,18 +237,20 @@ namespace FolderSync
                 //Console.WriteLine(Environment.Is64BitProcess ? "x64 version" : "x86 version");
                 Console.WriteLine("Press Ctrl+C to stop the monitors.");
 
+#if false
+                var pollingOptions = new EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    IgnoreInaccessible = true,
+                    AttributesToSkip = 0,
+                };
+#endif
+
                 //start the monitor.
                 using (var watch = new Watcher())
+                //using (var pollingSrcWatch = Global.UsePolling ? new PollingFileSystemWatcher(Global.SrcPath, "*", pollingOptions) : null)
+                //using (var pollingDestWatch = Global.UsePolling && Global.BidirectionalMirror ? new PollingFileSystemWatcher(Global.MirrorDestPath, "*", pollingOptions) : null)
                 {
-                    //var drvs = System.IO.DriveInfo.GetDrives();
-                    //foreach (var drv in drvs)
-                    //{
-                    //    if (drv.DriveType == System.IO.DriveType.Fixed)
-                    //    {
-                    //        watch.Add(new Request(drv.Name, true));
-                    //    }
-                    //}
-
                     watch.Add(new Request(Extensions.GetLongPath(Global.SrcPath), recursive: true));
 
                     if (Global.BidirectionalMirror)
@@ -233,6 +260,7 @@ namespace FolderSync
 
 
                     //prepare the console watcher so we can output pretty messages.
+                    //var consoleWatch = new ConsoleWatch(watch, pollingSrcWatch, pollingDestWatch);
                     var consoleWatch = new ConsoleWatch(watch);
 
 
@@ -243,60 +271,44 @@ namespace FolderSync
 
                     var initialSyncMessageContext = new Context(
                         eventObj: null,
-                        token: new CancellationToken(),
+                        token: Global.CancellationToken.Token,
                         forHistory: false,   //unused here
-                        isSrcPath: false   //unused here
+                        isSrcPath: false,   //unused here
+                        isInitialScan: true
                     );
 
 
-                    await ConsoleWatch.AddMessage(ConsoleColor.White, "Doing initial synchronisation...", initialSyncMessageContext);
-
-                    ConsoleWatch.DoingInitialSync = true;   //NB!
-
-
-
-                    //1. Do initial synchronisation from src to dest folder   //TODO: config for enabling and ordering of this operation
-                    if (Global.EnableHistory)
+                    BackgroundTaskManager.Run(async () =>
                     {
-                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Extensions.GetLongPath(Global.SrcPath)), "*." + (Global.HistoryWatchedExtension.Count == 1 ? Global.HistoryWatchedExtension.Single() : "*"), forHistory: true))
+                        await ConsoleWatch.AddMessage(ConsoleColor.White, "Doing initial synchronisation...", initialSyncMessageContext);
+
+                        BackgroundTaskManager.Run(async () => 
+                        { 
+                            await InitialSyncCountdownEvent.WaitAsync(Global.CancellationToken.Token);
+
+                            if (!Global.CancellationToken.IsCancellationRequested)
+                                await ConsoleWatch.AddMessage(ConsoleColor.White, "Done initial synchronisation...", initialSyncMessageContext);
+                        });
+
+                        ScanFolders(isInitialScan: true);
+
+
+                        if (Global.UsePolling)
                         {
-                            await ConsoleWatch.OnAddedAsync
-                            (
-                                new DummyFileSystemEvent(fileInfo),
-                                new CancellationToken()
-                            );
-                        }
-                    }
+                            while (!Global.CancellationToken.IsCancellationRequested)
+                            { 
+#if !NOASYNC
+                                await Task.Delay(Global.PollingDelay * 1000, Global.CancellationToken.Token);     //TODO: config file?
+#else
+                                Global.CancellationToken.Token.WaitHandle.WaitOne(Global.PollingDelay * 1000);
+#endif
 
-                    if (Global.EnableMirror)
-                    {
-                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Extensions.GetLongPath(Global.SrcPath)), "*." + (Global.MirrorWatchedExtension.Count == 1 ? Global.MirrorWatchedExtension.Single() : "*"), forHistory: false))
-                        {
-                            await ConsoleWatch.OnAddedAsync
-                            (
-                                new DummyFileSystemEvent(fileInfo),
-                                new CancellationToken()
-                            );
-                        }
-                    }
+                                ScanFolders(isInitialScan: false);
+                            }
+                        
+                        }   //if (Global.UsePolling)
 
-                    if (Global.BidirectionalMirror)
-                    {
-                        //2. Do initial synchronisation from dest to src folder   //TODO: config for enabling and ordering of this operation
-                        foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Extensions.GetLongPath(Global.MirrorDestPath)), "*." + (Global.MirrorWatchedExtension.Count == 1 ? Global.MirrorWatchedExtension.Single() : "*"), forHistory: false))
-                        {
-                            await ConsoleWatch.OnAddedAsync
-                            (
-                                new DummyFileSystemEvent(fileInfo),
-                                new CancellationToken()
-                            );
-                        }
-                    }
-
-
-
-                    ConsoleWatch.DoingInitialSync = false;   //NB!
-                    await ConsoleWatch.AddMessage(ConsoleColor.White, "Done initial synchronisation...", initialSyncMessageContext);
+                    });     //BackgroundTaskManager.Run(async () =>
 
 
                     //listen for the Ctrl+C 
@@ -316,7 +328,119 @@ namespace FolderSync
             {
                 await WriteException(ex);
             }
+        }   //private static async Task MainTask()
+
+        private static AsyncCountdownEvent InitialSyncCountdownEvent = new AsyncCountdownEvent(1);
+
+        private static Dictionary<string, FileInfo> HistorySrcPrevFileInfos = new Dictionary<string, FileInfo>();
+        private static Dictionary<string, FileInfo> MirrorSrcPrevFileInfos = new Dictionary<string, FileInfo>();
+        private static Dictionary<string, FileInfo> MirrorDestPrevFileInfos = new Dictionary<string, FileInfo>();
+
+        private static void ScanFolders(bool isInitialScan)
+        {
+            bool keepFileInfosForLaterPolling = Global.UsePolling;
+
+            //1. Do initial history synchronisation from src to dest folder   //TODO: config for enabling and ordering of this operation
+            if (Global.EnableHistory)
+            {
+                ScanFolder(ref HistorySrcPrevFileInfos, Global.SrcPath, "*." + (Global.HistoryWatchedExtension.Count == 1 ? Global.HistoryWatchedExtension.Single() : "*"), forHistory: true, keepFileInfosForLaterPolling: keepFileInfosForLaterPolling, isInitialScan: isInitialScan);
+            }
+
+            //1. Do initial mirror synchronisation from src to dest folder   //TODO: config for enabling and ordering of this operation
+            if (Global.EnableMirror)
+            {
+                ScanFolder(ref MirrorSrcPrevFileInfos, Global.SrcPath, "*." + (Global.MirrorWatchedExtension.Count == 1 ? Global.MirrorWatchedExtension.Single() : "*"), forHistory: false, keepFileInfosForLaterPolling: keepFileInfosForLaterPolling, isInitialScan: isInitialScan);
+            }
+
+            if (Global.BidirectionalMirror)
+            {
+                //2. Do initial mirror synchronisation from dest to src folder   //TODO: config for enabling and ordering of this operation
+                ScanFolder(ref MirrorDestPrevFileInfos, Global.MirrorDestPath, "*." + (Global.MirrorWatchedExtension.Count == 1 ? Global.MirrorWatchedExtension.Single() : "*"), forHistory: false, keepFileInfosForLaterPolling: keepFileInfosForLaterPolling, isInitialScan: isInitialScan);
+            }
+
+            if (isInitialScan)
+                InitialSyncCountdownEvent.Signal();
         }
+
+        private static void ScanFolder(ref Dictionary<string, FileInfo> PrevFileInfos, string path, string extension, bool forHistory, bool keepFileInfosForLaterPolling, bool isInitialScan)
+        {
+            var NewFileInfos = new Dictionary<string, FileInfo>();
+
+            foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Extensions.GetLongPath(path)), extension, forHistory))
+            {
+                NewFileInfos.Add(fileInfo.FullName, fileInfo);
+
+                FileInfo prevFileInfo;
+                if (!PrevFileInfos.TryGetValue(fileInfo.FullName, out prevFileInfo))
+                {
+                    if (isInitialScan)
+                        InitialSyncCountdownEvent.AddCount();
+
+                    BackgroundTaskManager.Run(async () => {
+
+                        await ConsoleWatch.OnAddedAsync
+                        (
+                            new DummyFileSystemEvent(fileInfo),
+                            Global.CancellationToken.Token,
+                            isInitialScan
+                        );
+
+                        if (isInitialScan)
+                            InitialSyncCountdownEvent.Signal();
+                    });
+                }
+                else
+                {
+                    if (
+                        prevFileInfo.Length != fileInfo.Length
+                        || prevFileInfo.LastWriteTimeUtc != fileInfo.LastWriteTimeUtc
+
+                        //TODO: support for copying the file attributes
+                        //|| prevFileInfo.Attributes != fileInfo.Attributes   
+                    )
+                    {
+                        if (isInitialScan)
+                            InitialSyncCountdownEvent.AddCount();
+
+                        BackgroundTaskManager.Run(async () => {
+
+                            await ConsoleWatch.OnTouchedAsync
+                            (
+                                new DummyFileSystemEvent(fileInfo),
+                                Global.CancellationToken.Token
+                            );
+
+                            if (isInitialScan)
+                                InitialSyncCountdownEvent.Signal();
+                        });
+                    }
+                }   //if (!PrevAddedFileInfos.TryGetValue(fileInfo.FullName, out prevFileInfo))
+            }   //foreach (var fileInfo in ProcessSubDirs(new DirectoryInfo(Extensions.GetLongPath(path)), "*." + extension, forHistory))
+
+            foreach (var fileInfoKvp in PrevFileInfos)
+            {
+                if (!NewFileInfos.ContainsKey(fileInfoKvp.Key))
+                {
+                    if (isInitialScan)
+                        InitialSyncCountdownEvent.AddCount();
+
+                    BackgroundTaskManager.Run(async () => {
+
+                        await ConsoleWatch.OnRemovedAsync
+                        (
+                            new DummyFileSystemEvent(fileInfoKvp.Value),
+                            Global.CancellationToken.Token
+                        );
+
+                        if (isInitialScan)
+                            InitialSyncCountdownEvent.Signal();
+                    });
+                }
+            }
+
+            PrevFileInfos = NewFileInfos;
+
+        }   //private static async Task ScanFolder(string path, string extension, bool forHistory, bool keepFileInfosForLaterPolling)
 
         private static IEnumerable<FileInfo> ProcessSubDirs(DirectoryInfo srcDirInfo, string searchPattern, bool forHistory, int recursionLevel = 0)
         {
@@ -457,6 +581,7 @@ namespace FolderSync
             var exitEvent = new AsyncManualResetEvent(false);
             Console.CancelKeyPress += delegate (object sender, ConsoleCancelEventArgs e)
             {
+                Global.CancellationToken.Cancel();
                 e.Cancel = true;
                 Console.WriteLine("Stop detected.");
                 exitEvent.Set();
@@ -471,6 +596,7 @@ namespace FolderSync
         public readonly CancellationToken Token;
         public readonly bool ForHistory;
         public readonly bool IsSrcPath;
+        public readonly bool IsInitialScan;
 
         public DateTime Time
         {
@@ -481,13 +607,14 @@ namespace FolderSync
         }
 
 #pragma warning disable CA1068  //should take CancellationToken as the last parameter
-        public Context(IFileSystemEvent eventObj, CancellationToken token, bool forHistory, bool isSrcPath)
+        public Context(IFileSystemEvent eventObj, CancellationToken token, bool forHistory, bool isSrcPath, bool isInitialScan)
 #pragma warning restore CA1068
         {
             Event = eventObj;
             Token = token;
             ForHistory = forHistory;
             IsSrcPath = isSrcPath;
+            IsInitialScan = isInitialScan;
         }
     }
 
@@ -507,9 +634,9 @@ namespace FolderSync
         internal static DateTime PrevAlertTime;
         internal static string PrevAlertMessage;
 
-#pragma warning disable S2223   //Warning	S2223	Change the visibility of 'DoingInitialSync' or make it 'const' or 'readonly'.
-        public static bool DoingInitialSync = false;
-#pragma warning restore S2223
+//#pragma warning disable S2223   //Warning	S2223	Change the visibility of 'DoingInitialSync' or make it 'const' or 'readonly'.
+//        public static bool DoingInitialSync = false;
+//#pragma warning restore S2223
 
         private static ConcurrentDictionary<string, DateTime> BidirectionalSynchroniserSavedFileDates = new ConcurrentDictionary<string, DateTime>();
         private static readonly AsyncLockQueueDictionary<string> FileEventLocks = new AsyncLockQueueDictionary<string>();
@@ -522,11 +649,25 @@ namespace FolderSync
             //_consoleColor = Console.ForegroundColor;
 
             //watch.OnErrorAsync += OnErrorAsync;
-            watch.OnAddedAsync += OnAddedAsync;
+            watch.OnAddedAsync += (fse, token) => OnAddedAsync(fse, token, isInitialScan: false);
             watch.OnRemovedAsync += OnRemovedAsync;
             watch.OnRenamedAsync += OnRenamedAsync;
             watch.OnTouchedAsync += OnTouchedAsync;
         }
+
+#if false
+        private async Task OnErrorAsync(IEventError ee, CancellationToken token)
+        {
+            try
+            {
+                await AddMessage(ConsoleColor.Red, $"[!]:{ee.Message}", context);
+            }
+            catch (Exception ex)
+            {
+                await WriteException(ex, context);
+            }
+        }
+#endif 
 
         public static async Task WriteException(Exception ex, Context context)
         {
@@ -590,7 +731,7 @@ namespace FolderSync
             {
                 if (IsSrcPath(fullNameInvariant))
                 {
-                    var srcFileDate = GetFileTime(fullName);
+                    var srcFileDate = GetFileTime(fullName);    //NB! here read the current file time, not file time at the event
 
                     if (Global.HistoryVersionFormat == "PREFIX_TIMESTAMP")
                     {
@@ -692,45 +833,103 @@ namespace FolderSync
             return converterSaveDate;
         }
 
-        public static bool NeedsUpdate(string fullName, bool forHistory)
+        public static bool NeedsUpdate(Context context)
         {
             if (
-                (!Global.EnableMirror && !forHistory)
-                || (!Global.EnableHistory && forHistory)
+                (!Global.EnableMirror && !context.ForHistory)
+                || (!Global.EnableHistory && context.ForHistory)
             )
             {
                 return false;
             }
 
-            if (DoingInitialSync && !Global.DoNotCompareFileContent)
+            //compare file date only when not doing initial sync OR when file content comparison is turned off
+            if (context.IsInitialScan && !Global.DoNotCompareFileContent)
             {
                 return true;
             }
+            else    
+            { 
+                var synchroniserSaveDate = GetBidirectionalSynchroniserSaveDate(context.Event.FullName);
+                var fileTime = context.Event.FileSystemInfo.LastWriteTimeUtc; //GetFileTime(fullName);
 
-            var synchroniserSaveDate = GetBidirectionalSynchroniserSaveDate(fullName);
-            var fileTime = GetFileTime(fullName);
-
-            if (
-                (!forHistory && !Global.BidirectionalMirror)   //no need to debounce BIDIRECTIONAL file save events when bidirectional save is disabled 
-                || forHistory
-                || fileTime > synchroniserSaveDate.AddSeconds(3)     //NB! ignore if the file changed during 3 seconds after bidirectional save   //TODO!! config
-            )
-            {
-                var otherFullName = GetOtherFullName(fullName, forHistory);
-                if (fileTime > GetFileTime(otherFullName))     //NB!
+                if (
+                    (!context.ForHistory && !Global.BidirectionalMirror)   //no need to debounce BIDIRECTIONAL file save events when bidirectional save is disabled 
+                    || context.ForHistory
+                    || fileTime > synchroniserSaveDate.AddSeconds(3)     //NB! ignore if the file changed during 3 seconds after bidirectional save   //TODO!! config
+                )
                 {
-                    return true;
-                }
-            }
+                    var otherFullName = GetOtherFullName(context.Event.FullName, context.ForHistory);
 
-            return false;
+                    bool considerDateAsNewer = false;
+                    if (Global.DoNotCompareFileDate)
+                    { 
+                        considerDateAsNewer = true;
+                    }
+                    else
+                    { 
+                        var otherFileTime = GetFileTime(otherFullName);
+
+                        if (otherFileTime == DateTime.MinValue)     //file not found
+                            return true;
+
+                        if (fileTime > otherFileTime)     //NB!
+                            considerDateAsNewer = true;
+                    }
+
+                    if (considerDateAsNewer)
+                    { 
+                        if (Global.DoNotCompareFileContent)
+                        {
+                            if (Global.DoNotCompareFileSize)
+                            {
+                                //if date check was done above then there is no need to do file existence check here
+                                if (Global.DoNotCompareFileDate)
+                                { 
+                                    bool otherFileExists = File.Exists(Extensions.GetLongPath(otherFullName));
+                                    
+                                    if (!otherFileExists)
+                                    {
+                                        return true;
+                                    }
+                                }
+                                else
+                                {
+                                    return false;   //if the other file does not exist then the function returns true in date check
+                                }
+                            }
+                            else
+                            {
+                                //files from directory scan are passed as FileInfo type and have Length available
+                                //but files from directory watcher are of type FileSystemInfo and do not have length available
+                                var fileLength = (context.Event.FileSystemInfo as FileInfo)
+                                                        ?.Length 
+                                                        ?? GetFileSize(context.Event.FullName);
+                                var otherFileLength = GetFileSize(otherFullName);
+
+                                if (fileLength != otherFileLength)
+                                {
+                                    return true;
+                                }
+                            }
+                        }
+                        else    //if (Global.DoNotCompareFileContent)
+                        { 
+                            return true;
+                        }
+                    }   //if (fileTime > otherFileTime)
+                }
+
+                return false;
+
+            }   //if (context.IsInitialScan && !Global.DoNotCompareFileContent)
         }
 
         public static async Task FileUpdated(string fullName, Context context)
         {
             if (
                 IsWatchedFile(fullName, context.ForHistory)
-                && NeedsUpdate(fullName, context.ForHistory)     //NB!
+                && NeedsUpdate(context)     //NB!
             )
             {
                 var otherFullName = GetOtherFullName(fullName, context.ForHistory);
@@ -886,15 +1085,15 @@ namespace FolderSync
             //NB! create separate context to properly handle disk free space checks on cases where file is renamed from src path to dest path (not a recommended practice though!)
 
             var previousFullNameInvariant = fse.PreviousFileSystemInfo.FullName.ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
-            var previousContext = new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(previousFullNameInvariant));
+            var previousContext = new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(previousFullNameInvariant), isInitialScan: false);
 
             var newFullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
             var newPathIsSrcPath = IsSrcPath(newFullNameInvariant);
 
 
             var contexts = new Context[] {
-                new Context(fse, token, forHistory: false, isSrcPath: newPathIsSrcPath),
-                new Context(fse, token, forHistory: true, isSrcPath: newPathIsSrcPath)
+                new Context(fse, token, forHistory: false, isSrcPath: newPathIsSrcPath, isInitialScan: false),
+                new Context(fse, token, forHistory: true, isSrcPath: newPathIsSrcPath, isInitialScan: false)
             };
 
 
@@ -962,19 +1161,31 @@ namespace FolderSync
             }
         }   //private static async Task OnRenamedAsync(IRenamedFileSystemEvent fse, CancellationToken token)
 
-        private static async Task OnRemovedAsync(IFileSystemEvent fse, CancellationToken token)
+        internal static async Task OnRemovedAsync(IFileSystemEvent fse, CancellationToken token)
         {
             var fullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
 
             var contexts = new Context[] {
-                new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(fullNameInvariant)),
-                new Context(fse, token, forHistory: true, isSrcPath: true)
+                new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(fullNameInvariant), isInitialScan: false),
+                new Context(fse, token, forHistory: true, isSrcPath: true, isInitialScan: false)
             };
 
             foreach (var context in contexts)
             {
                 try
                 {
+                    if (
+                        !context.ForHistory 
+                        && 
+                        (
+                            (context.IsSrcPath && Global.MirrorIgnoreSrcDeletions)
+                            || (!context.IsSrcPath && Global.MirrorIgnoreDestDeletions)
+                        )
+                    )
+                    { 
+                        continue;
+                    }
+
                     if (fse.IsFile)
                     {
                         if (IsWatchedFile(fse.FileSystemInfo.FullName, context.ForHistory))
@@ -999,13 +1210,13 @@ namespace FolderSync
             }
         }
 
-        public static async Task OnAddedAsync(IFileSystemEvent fse, CancellationToken token)
+        internal static async Task OnAddedAsync(IFileSystemEvent fse, CancellationToken token, bool isInitialScan)
         {
             var fullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
 
             var contexts = new Context[] {
-                new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(fullNameInvariant)),
-                new Context(fse, token, forHistory: true, isSrcPath: true)
+                new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(fullNameInvariant), isInitialScan: isInitialScan),
+                new Context(fse, token, forHistory: true, isSrcPath: true, isInitialScan: isInitialScan)
             };
 
             foreach (var context in contexts)
@@ -1016,7 +1227,8 @@ namespace FolderSync
                     {
                         if (IsWatchedFile(fse.FileSystemInfo.FullName, context.ForHistory))
                         {
-                            //await AddMessage(ConsoleColor.Green, $"[{(fse.IsFile ? "F" : "D")}][+]:{fse.FileSystemInfo.FullName}", context);
+                            if (!context.IsInitialScan)
+                                await AddMessage(ConsoleColor.Green, $"[{(fse.IsFile ? "F" : "D")}][+]:{fse.FileSystemInfo.FullName}", context);
 
                             using (await FileEventLocks.LockAsync(fse.FileSystemInfo.FullName, token))
                             {
@@ -1036,31 +1248,32 @@ namespace FolderSync
             }
         }
 
-        private static async Task OnTouchedAsync(IFileSystemEvent fse, CancellationToken token)
+        internal static async Task OnTouchedAsync(IFileSystemEvent fse, CancellationToken token)
         {
             var fullNameInvariant = fse.FileSystemInfo.FullName.ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
 
             var contexts = new Context[] {
-                new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(fullNameInvariant)),
-                new Context(fse, token, forHistory: true, isSrcPath: true)
+                new Context(fse, token, forHistory: false, isSrcPath: IsSrcPath(fullNameInvariant), isInitialScan: false),
+                new Context(fse, token, forHistory: true, isSrcPath: true, isInitialScan: false)
             };
 
             foreach (var context in contexts)
             {
                 try
                 {
-                    if (
-                        fse.IsFile
-                        && File.Exists(Extensions.GetLongPath(fse.FileSystemInfo.FullName))     //for some reason fse.IsFile is set even for folders
-                    )
+                    if (fse.IsFile)
                     {
                         if (IsWatchedFile(fse.FileSystemInfo.FullName, context.ForHistory))
                         {
-                            await AddMessage(ConsoleColor.Gray, $"[{(fse.IsFile ? "F" : "D")}][T]:{fse.FileSystemInfo.FullName}", context);
+                            //check for file type only after checking IsWatchedFile first since file type checking might already be a slow operation
+                            if (File.Exists(Extensions.GetLongPath(fse.FileSystemInfo.FullName)))     //for some reason fse.IsFile is set even for folders
+                            { 
+                                await AddMessage(ConsoleColor.Gray, $"[{(fse.IsFile ? "F" : "D")}][T]:{fse.FileSystemInfo.FullName}", context);
 
-                            using (await FileEventLocks.LockAsync(fse.FileSystemInfo.FullName, token))
-                            {
-                                await FileUpdated(fse.FileSystemInfo.FullName, context);
+                                using (await FileEventLocks.LockAsync(fse.FileSystemInfo.FullName, token))
+                                {
+                                    await FileUpdated(fse.FileSystemInfo.FullName, context);
+                                }
                             }
                         }
                     }
@@ -1075,18 +1288,6 @@ namespace FolderSync
                 }
             }
         }
-
-        //private async Task OnErrorAsync(IEventError ee, CancellationToken token)
-        //{
-        //    try
-        //    { 
-        //        await AddMessage(ConsoleColor.Red, $"[!]:{ee.Message}", context);
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        await WriteException(ex, context);
-        //    }
-        //}
 
         public static async Task AddMessage(ConsoleColor color, string message, Context context, bool showAlert = false)
         {
@@ -1127,14 +1328,12 @@ namespace FolderSync
         public static async Task SaveFileModifications(string fullName, byte[] fileData, byte[] originalData, Context context)
         {
             var otherFullName = GetOtherFullName(fullName, context.ForHistory);
-            var otherFileLength = GetFileSize(otherFullName);
 
 
             //NB! detect whether the file actually changed
             var otherFileData = 
                 !Global.DoNotCompareFileContent 
                     && File.Exists(Extensions.GetLongPath(otherFullName))
-                    && otherFileLength == fileData.Length   //optimisation
                 ? await FileExtensions.ReadAllBytesAsync(Extensions.GetLongPath(otherFullName), context.Token)    //TODO: optimisation: no need to read the bytes in case the file lenghts are different
                 : null;
 
@@ -1148,10 +1347,7 @@ namespace FolderSync
                     )
                 )
                 ||
-                (
-                    Global.DoNotCompareFileContent
-                    && otherFileLength != fileData.Length
-                )
+                Global.DoNotCompareFileContent
             )
             {
                 var minDiskFreeSpace = context.ForHistory ? Global.HistoryDestPathMinFreeSpace : (context.IsSrcPath ? Global.MirrorDestPathMinFreeSpace : Global.SrcPathMinFreeSpace);
