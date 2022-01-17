@@ -17,22 +17,24 @@ namespace FolderSync
 {
     public static partial class FileExtensions
     {
+        public static int MaxByteArraySize = 0x7FFFFFC7; //https://docs.microsoft.com/en-us/dotnet/framework/configure-apps/file-schema/runtime/gcallowverylargeobjects-element?redirectedfrom=MSDN#remarks
+
         //https://stackoverflow.com/questions/18472867/checking-equality-for-two-byte-arrays/
         public static bool BinaryEqual(Binary a, Binary b)
         {
             return a.Equals(b);
         }
 
-        public static async Task<byte[]> ReadAllBytesAsync(string path, CancellationToken cancellationToken = default(CancellationToken))
+        public static async Task<Tuple<byte[], long>> ReadAllBytesAsync(string path, CancellationToken cancellationToken = default(CancellationToken), long maxFileSize = 0)
         {
             while (true)
             {
                 if (cancellationToken.IsCancellationRequested)
-                    return await Task.FromCanceled<byte[]>(cancellationToken);
+                    return await Task.FromCanceled<Tuple<byte[], long>>(cancellationToken);
 
                 try
                 {
-                    using (FileStream stream = new FileStream(
+                    using (var stream = new FileStream(
                         path,
                         FileMode.Open,
                         FileAccess.Read,
@@ -41,10 +43,17 @@ namespace FolderSync
                         useAsync: true
                     ))
                     {
-                        var len = (int)stream.Length;    //NB! the lenght might change during the code execution, so need to save it into separate variable
+                        long len = stream.Length;    //NB! the length might change during the code execution, so need to save it into separate variable
+
+                        maxFileSize = Math.Min(MaxByteArraySize, maxFileSize);
+                        if (maxFileSize > 0 && len > maxFileSize)
+                        {
+                            return new Tuple<byte[], long>(null, len);
+                        }
+
                         byte[] result = new byte[len];
-                        await stream.ReadAsync(result, 0, len, cancellationToken);
-                        return result;
+                        await stream.ReadAsync(result, 0, (int)len, cancellationToken);
+                        return new Tuple<byte[], long>(result, len);
                     }
                 }
                 catch (IOException)
@@ -61,21 +70,21 @@ namespace FolderSync
                     catch (TaskCanceledException)
                     {
                         //do nothing here
-                        return await Task.FromCanceled<byte[]>(cancellationToken);
+                        return await Task.FromCanceled<Tuple<byte[], long>>(cancellationToken);
                     }
                 }
             }
         }
 
-        public static async Task WriteAllBytesAsync(string path, byte[] contents, CancellationToken cancellationToken = default(CancellationToken))
+        public static async Task WriteAllBytesAsync(string path, byte[] contents, CancellationToken cancellationToken = default(CancellationToken), int writeBufferKB = 0, int bufferWriteDelayMs = 0)
         {
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 try
-                {
-                    using (FileStream stream = new FileStream(
+                {                    
+                    using (var stream = new FileStream(
                         path,
                         FileMode.OpenOrCreate, 
                         FileAccess.Write, 
@@ -84,7 +93,24 @@ namespace FolderSync
                         useAsync: true
                     ))
                     {
-                        await stream.WriteAsync(contents, 0, contents.Length, cancellationToken);
+                        var writeBufferLength = writeBufferKB * 1024;
+                        if (writeBufferLength <= 0 || bufferWriteDelayMs <= 0)  //NB! disable write buffer length limit if delay is 0
+                            writeBufferLength = contents.Length;
+
+                        for (int i = 0; i < contents.Length; i += writeBufferLength)
+                        {
+                            if (i > 0 && bufferWriteDelayMs > 0)
+                            {
+#if !NOASYNC
+                                await Task.Delay(bufferWriteDelayMs, cancellationToken); 
+#else
+                                cancellationToken.WaitHandle.WaitOne(bufferWriteDelayMs);
+#endif
+                            }
+
+                            await stream.WriteAsync(contents, i, writeBufferLength, cancellationToken);                            
+                        }
+
                         return;
                     }
                 }

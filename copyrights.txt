@@ -1,6 +1,8 @@
 ﻿
+AsyncEnumerator 4.0.2, MIT Licence. https://www.nuget.org/packages/AsyncEnumerator/
 Icon: Martins Ratkus, Attribution 3.0 Unported (CC BY 3.0). https://www.iconfinder.com/icons/4014679/content_data_mobile_share_sync_transfer_icon
 Microsoft.Extensions.Configuration.Json 1.1.2, Microsoft, Microsoft .Net Library License. https://www.nuget.org/packages/Microsoft.Extensions.Configuration.Json/1.1.2
 MyOddWeb.DirectoryWatcher 0.1.8, 2018 Florent Guelfucci, MIT Licence. https://www.nuget.org/packages/MyOddWeb.DirectoryWatcher/0.1.8
-Nito.AsyncEx.Coordination 5.0.0, Stephen Cleary, MIT License. https://www.nuget.org/packages/Nito.AsyncEx.Coordination/
+Nito.AspNetBackgroundTasks 1.0.0, Stephen Cleary, MIT License. https://www.nuget.org/packages/Nito.AspNetBackgroundTasks/
+Nito.AsyncEx 5.0.0, Stephen Cleary, MIT License. https://www.nuget.org/packages/Nito.AsyncEx.Coordination/
 
