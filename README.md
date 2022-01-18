@@ -12,9 +12,16 @@ Ready to use. Maintained and in active use.
 
 			"CaseSensitiveFilenames": null,
 			"DoNotCompareFileContent": false,
+			"DoNotCompareFileDate": false,
+			"DoNotCompareFileSize": false,
+
+			"UsePolling": false,
+			"PollingDelay": 60,
 
 			"EnableMirror": true,
 			"Bidirectional": false,
+			"MirrorIgnoreSrcDeletions": false,
+			"MirrorIgnoreDestDeletions": false,
 			"MirrorDestPath": "C:\\yourpath\\yourproject-backup\\",
 
 			"EnableHistory": true,
