@@ -10,13 +10,21 @@ Ready to use. Maintained and in active use.
 		"Files": {
 			"SrcPath": "C:\\yourpath\\yourproject\\",
 
+			"MaxFileSizeMB": 2048,
 			"CaseSensitiveFilenames": null,
 			"DoNotCompareFileContent": false,
 			"DoNotCompareFileDate": false,
 			"DoNotCompareFileSize": false,
+			"CacheDestAndHistoryFolders": false,
 
 			"UsePolling": false,
 			"PollingDelay": 60,
+			"RetryCountOnEmptyDirlist": 5,
+
+			"UseIdlePriority": false,
+			"FileWriteDelayMs": 0,
+			"WriteBufferKB": 0,
+			"BufferWriteDelayMs": 0,
 
 			"EnableMirror": true,
 			"Bidirectional": false,
@@ -40,6 +48,7 @@ Ready to use. Maintained and in active use.
 			"MirrorIgnorePathsStartingWith": [
 			],
 			"MirrorIgnorePathsContaining": [
+				"\\~$",
 				"\\db.lock",
 				"\\Logs\\",
 				"\\node_modules\\",
@@ -57,6 +66,7 @@ Ready to use. Maintained and in active use.
 			"HistoryIgnorePathsStartingWith": [
 			],
 			"HistoryIgnorePathsContaining": [
+				"\\~$",
 				".localhistory\\",
 				".vshistory\\",
 				"\\bin\\",
