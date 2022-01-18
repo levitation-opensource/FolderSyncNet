@@ -70,7 +70,9 @@ namespace FolderSync
 
         public static async Task<T[]> DirListOperation<T>(Func<T[]> func, int retryCount, CancellationToken token)
         {
-            for (int i = 0; i < retryCount; i++)
+            retryCount = Math.Max(0, retryCount);
+
+            for (int i = -1; i < retryCount; i++)
             { 
                 //T result = await Task.Run(func).WaitAsync(token);
                 var result = func();
