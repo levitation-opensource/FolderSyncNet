@@ -191,16 +191,16 @@
     <None Include="appsettings.debug2.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Include="appsettings.test2.json">
+    <None Include="appsettings.debug4.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Include="appsettings.test1.json">
+    <None Include="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Include="appsettings.example.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Include="appsettings.json">
+    <None Include="appsettings.debug3.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Include="appsettings.ipcam1.json">
