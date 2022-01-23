@@ -15,7 +15,10 @@ Ready to use. Maintained and in active use.
 			"DoNotCompareFileContent": false,
 			"DoNotCompareFileDate": false,
 			"DoNotCompareFileSize": false,
+			
 			"CacheDestAndHistoryFolders": false,
+			"PersistentCacheDestAndHistoryFolders": false,
+			"CachePath": "C:\\yourpath\\yourproject-cache\\",
 
 			"UsePolling": false,
 			"PollingDelay": 60,
