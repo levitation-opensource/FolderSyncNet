@@ -52,6 +52,7 @@ Ready to use. Maintained and in active use.
 			],
 			"MirrorIgnorePathsContaining": [
 				"\\~$",
+				".tmp\\",
 				"\\db.lock",
 				"\\Logs\\",
 				"\\node_modules\\",
@@ -70,6 +71,7 @@ Ready to use. Maintained and in active use.
 			],
 			"HistoryIgnorePathsContaining": [
 				"\\~$",
+				".tmp\\",
 				".localhistory\\",
 				".vshistory\\",
 				"\\bin\\",
