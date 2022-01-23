@@ -9,7 +9,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("Simplify / Macrotec LLC")]
 [assembly: AssemblyProduct("FolderSyncNet")]
-[assembly: AssemblyCopyright("Copyright © Roland Pihlakas 2019 - 2020")]
+[assembly: AssemblyCopyright("Copyright © Roland Pihlakas 2019 - 2022")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 

@@ -1,5 +1,5 @@
 ﻿//
-// Copyright (c) Roland Pihlakas 2019 - 2020
+// Copyright (c) Roland Pihlakas 2019 - 2022
 // roland@simplify.ee
 //
 // Roland Pihlakas licenses this file to you under the GNU Lesser General Public License, ver 2.1.
@@ -27,6 +27,11 @@ namespace FolderSync
 
         public static async Task<Tuple<byte[], long>> ReadAllBytesAsync(string path, CancellationToken cancellationToken = default(CancellationToken), long maxFileSize = 0)
         {
+            if (path == null)
+                throw new ArgumentNullException(nameof(path));
+            if (path.Length == 0)
+                throw new ArgumentException("Argument_EmptyPath: {0}", nameof(path));
+
             while (true)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -76,8 +81,17 @@ namespace FolderSync
             }
         }
 
-        public static async Task WriteAllBytesAsync(string path, byte[] contents, CancellationToken cancellationToken = default(CancellationToken), int writeBufferKB = 0, int bufferWriteDelayMs = 0)
+        public static async Task WriteAllBytesAsync(string path, byte[] contents, bool createTempFileFirst, CancellationToken cancellationToken = default(CancellationToken), int writeBufferKB = 0, int bufferWriteDelayMs = 0)
         {
+            if (path == null)
+                throw new ArgumentNullException(nameof(path));
+            if (path.Length == 0)
+                throw new ArgumentException("Argument_EmptyPath: {0}", nameof(path));
+
+            var tempPath = path;
+            if (createTempFileFirst)
+                tempPath += ".tmp";
+
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -85,7 +99,7 @@ namespace FolderSync
                 try
                 {                    
                     using (var stream = new FileStream(
-                        path,
+                        tempPath,
                         FileMode.OpenOrCreate, 
                         FileAccess.Write, 
                         FileShare.Read,
@@ -110,9 +124,22 @@ namespace FolderSync
 
                             await stream.WriteAsync(contents, i, writeBufferLength, cancellationToken);                            
                         }
-
-                        return;
                     }
+
+                    if (createTempFileFirst)
+                    {
+                        if (await Extensions.FSOperation(() => File.Exists(path), cancellationToken))
+                        {
+#pragma warning disable SEC0116 //Warning	SEC0116	Unvalidated file paths are passed to a file delete API, which can allow unauthorized file system operations (e.g. read, write, delete) to be performed on unintended server files.
+                            await Extensions.FSOperation(() => File.Delete(path), cancellationToken);
+#pragma warning restore SEC0116
+                        }
+
+                        await Extensions.FSOperation(() => File.Move(tempPath, path), cancellationToken);
+                    }
+
+
+                    return;     //exit while loop
                 }
                 catch (IOException)
                 {

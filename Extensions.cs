@@ -1,5 +1,5 @@
 ﻿//
-// Copyright (c) Roland Pihlakas 2019 - 2020
+// Copyright (c) Roland Pihlakas 2019 - 2022
 // roland@simplify.ee
 //
 // Roland Pihlakas licenses this file to you under the GNU Lesser General Public License, ver 2.1.
@@ -10,6 +10,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Formatters.Binary;
 using System.Threading;
 using System.Threading.Tasks;
 using Nito.AsyncEx;
@@ -43,6 +46,10 @@ namespace FolderSync
 
         public static string GetLongPath(string path)
         {
+            if (!ConfigParser.IsWindows)
+                return Path.GetFullPath(path);    //GetFullPath: convert relative path to full path
+
+
             //@"\\?\" prefix is needed for reading from long paths: https://stackoverflow.com/questions/44888844/directorynotfoundexception-when-using-long-paths-in-net-4-7 and https://superuser.com/questions/1617012/support-of-the-unc-server-share-syntax-in-windows
 
             if (path.Substring(0, 2) == @"\\")   //network path or path already starting with \\?\
@@ -51,8 +58,18 @@ namespace FolderSync
             }
             else
             {
-                return @"\\?\" + path;
+                return @"\\?\" + Path.GetFullPath(path);    //GetFullPath: convert relative path to full path
             }
+        }
+
+        public static string GetDirPathWithTrailingSlash(string dirPath)
+        {
+            if (string.IsNullOrWhiteSpace(dirPath))
+                return dirPath;
+
+            dirPath = Path.Combine(dirPath, ".");    //NB! add "." in order to ensure that slash is appended to the end of the path
+            dirPath = dirPath.Substring(0, dirPath.Length - 1);     //drop the "." again
+            return dirPath;
         }
 
         public static async Task FSOperation(Action func, CancellationToken token)
@@ -95,6 +112,69 @@ namespace FolderSync
             }
 
             return new T[0];
+        }
+
+        public static byte[] SerializeBinary<T>(this T obj, bool compress = true)
+        {
+            var formatter = new BinaryFormatter();
+            formatter.Context = new StreamingContext(StreamingContextStates.Persistence);
+
+            using (var mstream = new MemoryStream())
+            {
+                if (compress)
+                {
+                    using (var gzStream = new GZipStream(mstream, CompressionLevel.Optimal, leaveOpen: true))
+                    {
+                        formatter.Serialize(gzStream, obj);
+                    }
+                }
+                else
+                {
+                    formatter.Serialize(mstream, obj);
+                }
+
+                byte[] bytes = new byte[mstream.Length];
+                mstream.Position = 0;   //NB! reset stream position
+                mstream.Read(bytes, 0, (int)mstream.Length);
+                return bytes;
+            }
+        }
+
+        public static T DeserializeBinary<T>(this byte[] bytes, bool? decompress = null)
+        {
+            var formatter = new BinaryFormatter();
+            formatter.Context = new StreamingContext(StreamingContextStates.Persistence);
+
+            using (var mstream = new MemoryStream(bytes))
+            {
+                mstream.Position = 0;
+
+                if (decompress == null)     //auto detect
+                {
+                    if (mstream.ReadByte() == 0x1F && mstream.ReadByte() == 0x8B)
+                        decompress = true;
+
+                    mstream.Position = 0;   //reset stream position
+                }
+
+                if (decompress == true)
+                {
+                    using (var gzStream = new GZipStream(mstream, CompressionMode.Decompress, leaveOpen: true))
+                    {
+                        object result = formatter.Deserialize(gzStream);
+                        if (result is T)
+                            return (T)result;
+                        return default(T);
+                    }
+                }
+                else
+                {
+                    object result = formatter.Deserialize(mstream);
+                    if (result is T)
+                        return (T)result;
+                    return default(T);
+                }
+            }
         }
     }
 }
