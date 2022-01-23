@@ -256,7 +256,7 @@ namespace FolderSync
             Global.PersistentCacheDestAndHistoryFolders = fileConfig.GetTextUpper("PersistentCacheDestAndHistoryFolders") == "TRUE";   //default is false
             
             Global.CachePath = Extensions.GetDirPathWithTrailingSlash(fileConfig.GetTextUpperOnWindows(Global.CaseSensitiveFilenames, "CachePath"));
-            if (!string.IsNullOrWhiteSpace(Global.CachePath))
+            if (string.IsNullOrWhiteSpace(Global.CachePath))
                 Global.CachePath = Extensions.GetDirPathWithTrailingSlash(Path.Combine(".", "cache")).ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
 
 
