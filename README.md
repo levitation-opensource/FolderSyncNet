@@ -17,7 +17,7 @@ Ready to use. Maintained and in active use.
 			"DoNotCompareFileSize": false,
 			
 			"CacheDestAndHistoryFolders": false,
-			"PersistentCacheDestAndHistoryFolders": true,
+			"PersistentCacheDestAndHistoryFolders": false,
 			"CachePath": "C:\\yourpath\\yourproject-cache\\",
 
 			"UsePolling": false,
