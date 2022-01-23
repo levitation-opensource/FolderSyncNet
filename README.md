@@ -70,6 +70,7 @@ Ready to use. Maintained and in active use.
 			],
 			"HistoryIgnorePathsContaining": [
 				"\\~$",
+				".tmp\\",
 				".localhistory\\",
 				".vshistory\\",
 				"\\bin\\",
