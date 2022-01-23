@@ -52,6 +52,7 @@ Ready to use. Maintained and in active use.
 			],
 			"MirrorIgnorePathsContaining": [
 				"\\~$",
+				".tmp\\",
 				"\\db.lock",
 				"\\Logs\\",
 				"\\node_modules\\",
