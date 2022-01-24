@@ -686,6 +686,8 @@ namespace FolderSync
                                 catch (Exception ex) when (ex is DirectoryNotFoundException || ex is UnauthorizedAccessException)
                                 {
                                     //ignore the error
+
+                                    //UnauthorizedAccessException can also occur when a folder was just created, but it can still be ignored here since then file add handler will take care of caching that folder
                                 }
                             })
                             .WaitAsync(Global.CancellationToken.Token);
@@ -769,6 +771,8 @@ namespace FolderSync
                                 catch (Exception ex) when (ex is DirectoryNotFoundException || ex is UnauthorizedAccessException)
                                 {
                                     //ignore the error
+
+                                    //UnauthorizedAccessException can also occur when a folder was just created, but it can still be ignored here since then file add handler will take care of caching that folder
                                 }
                             })
                             .WaitAsync(Global.CancellationToken.Token);
@@ -790,6 +794,8 @@ namespace FolderSync
                         catch (Exception ex) when (ex is DirectoryNotFoundException || ex is UnauthorizedAccessException)
                         {
                             fileInfos = Array.Empty<FileInfo>();
+
+                            //UnauthorizedAccessException can also occur when a folder was just created, but it can still be ignored here since then file add handler will take care of that folder
                         }
                     })
                     .WaitAsync(Global.CancellationToken.Token);
@@ -809,6 +815,8 @@ namespace FolderSync
                         catch (Exception ex) when (ex is DirectoryNotFoundException || ex is UnauthorizedAccessException)
                         {
                             dirInfos = Array.Empty<DirectoryInfo>();
+
+                            //UnauthorizedAccessException can also occur when a folder was just created, but it can still be ignored here since then file add handler will take care of that folder
                         }
                     })
                     .WaitAsync(Global.CancellationToken.Token);
@@ -965,7 +973,7 @@ namespace FolderSync
 
 
 
-            ex = ex_in;
+            ex = ex_in;     //TODO: refactor to shared function
 
             var message = new StringBuilder();
             message.Append(DateTime.Now);
@@ -996,7 +1004,7 @@ namespace FolderSync
 
 
             //Console.WriteLine(ex.Message);
-            message.Clear();
+            message.Clear();     //TODO: refactor to shared function
             message.Append(ex.Message.ToString());
             while (ex.InnerException != null)
             {
@@ -1191,7 +1199,7 @@ namespace FolderSync
 
 
 
-            ex = ex_in;
+            ex = ex_in;     //TODO: refactor to shared function
 
             var message = new StringBuilder();
             message.Append(DateTime.Now);
@@ -1222,7 +1230,7 @@ namespace FolderSync
 
 
             //Console.WriteLine(ex.Message);
-            message.Clear();
+            message.Clear();     //TODO: refactor to shared function
             message.Append(ex.Message.ToString());
             while (ex.InnerException != null)
             {
@@ -2366,6 +2374,7 @@ namespace FolderSync
 
                 var otherDirName = Extensions.GetDirPathWithTrailingSlash(Path.GetDirectoryName(otherFullName));
                 var longOtherDirName = Extensions.GetLongPath(otherDirName);
+                bool newFolderCreated = false;
 
                 if (
                     !Global.CacheDestAndHistoryFolders
@@ -2373,7 +2382,32 @@ namespace FolderSync
                 )
                 { 
                     if (!await Extensions.FSOperation(() => Directory.Exists(longOtherDirName), context.Token))
-                        await Extensions.FSOperation(() => Directory.CreateDirectory(longOtherDirName), context.Token);                    
+                    {
+                        newFolderCreated = true;
+
+                        if (    
+                            Global.CacheDestAndHistoryFolders
+                            && Global.PersistentCacheDestAndHistoryFolders
+                        )
+                        {
+                            //NB! create file cache before creating the folder so that any files that are concurrently added to the folder upon creating it are all added to cache
+                            //We do not just create a cache folder in every case a file is added to an existing folder since that folder will be cached separately by the initial folder scan once it reaches this folder
+
+                            using (await Global.PersistentCacheLocks.LockAsync(longOtherDirName, context.Token))
+                            {
+                                var cachedFileInfos = await ReadFileInfoCache(longOtherDirName, context.ForHistory);
+
+                                if (cachedFileInfos == null)    //ensure that the cache was not created yet by a concurrent file write to same folder
+                                {
+                                    cachedFileInfos = new Dictionary<string, CachedFileInfo>();
+                                    await SaveFileInfoCache(cachedFileInfos, longOtherDirName, context.ForHistory);
+                                }
+                            }
+                        }
+
+                        await Extensions.FSOperation(() => Directory.CreateDirectory(longOtherDirName), context.Token);
+
+                    }   //if (!await Extensions.FSOperation(() => Directory.Exists(longOtherDirName), context.Token))
 
                     if (Global.CacheDestAndHistoryFolders)
                         Global.CreatedFoldersCache.TryAdd(longOtherDirName, true);
@@ -2381,7 +2415,10 @@ namespace FolderSync
 
 
                 //invalidate file data in dirlist cache before file write
-                if (Global.PersistentCacheDestAndHistoryFolders)
+                if (
+                    Global.PersistentCacheDestAndHistoryFolders
+                    && !newFolderCreated    //optimisation
+                )
                 {
                     using (await Global.PersistentCacheLocks.LockAsync(longOtherDirName, context.Token))
                     {
@@ -2444,7 +2481,8 @@ namespace FolderSync
                         {
                             var cachedFileInfos = await ReadFileInfoCache(longOtherDirName, context.ForHistory);
 
-                            if (cachedFileInfos != null)    //TODO: if cachedFileInfos == null then scan entire folder and create cached file infos file
+                            //We do not just create a cache folder in every case a file is added to an existing folder since that folder will be cached separately by the initial folder scan once it reaches this folder
+                            if (cachedFileInfos != null)
                             {
                                 cachedFileInfos[GetNonFullName(longOtherFullName)] = new CachedFileInfo(fileInfo, useNonFullPath: true);
 

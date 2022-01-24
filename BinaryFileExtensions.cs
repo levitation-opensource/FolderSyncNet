@@ -61,7 +61,10 @@ namespace FolderSync
                         return new Tuple<byte[], long>(result, len);
                     }
                 }
-                catch (IOException)
+                catch (Exception ex) when (
+                    ex is IOException 
+                    || ex is UnauthorizedAccessException    //can happen when a folder was just created
+                )
                 {
                     //retry after delay
                     try
