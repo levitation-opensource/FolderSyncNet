@@ -63,7 +63,7 @@ namespace FolderSync
                 }
                 catch (Exception ex) when (
                     ex is IOException 
-                    || ex is UnauthorizedAccessException    //can happen when a folder was just created
+                    || ex is UnauthorizedAccessException    //can happen when a folder was just created     //TODO: abandon retries after a certain number of attempts in this case
                 )
                 {
                     //retry after delay

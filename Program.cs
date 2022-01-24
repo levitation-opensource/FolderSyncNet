@@ -37,9 +37,11 @@ namespace FolderSync
 
 
         public static bool UseIdlePriority = false;
+        public static int DirlistReadDelayMs = 0;
         public static int FileWriteDelayMs = 0;
         public static int WriteBufferKB = 0;
         public static int BufferWriteDelayMs = 0;
+        public static bool ShowErrorAlerts = true;
 
 
         public static bool UsePolling = false;
@@ -258,6 +260,9 @@ namespace FolderSync
             Global.CachePath = Extensions.GetDirPathWithTrailingSlash(fileConfig.GetTextUpperOnWindows(Global.CaseSensitiveFilenames, "CachePath"));
             if (string.IsNullOrWhiteSpace(Global.CachePath))
                 Global.CachePath = Extensions.GetDirPathWithTrailingSlash(Path.Combine(".", "cache")).ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
+
+            Global.DirlistReadDelayMs = (int?)fileConfig.GetLong("DirlistReadDelayMs") ?? Global.DirlistReadDelayMs;
+            Global.ShowErrorAlerts = fileConfig.GetTextUpper("ShowErrorAlerts") != "FALSE";   //default is true
 
 
             if (!string.IsNullOrWhiteSpace(fileConfig.GetTextUpper("CaseSensitiveFilenames")))   //default is null
@@ -576,6 +581,18 @@ namespace FolderSync
         private static IAsyncEnumerable<FileInfo> ProcessSubDirs(DirectoryInfo srcDirInfo, string searchPattern, bool isSrcPath, bool forHistory, int recursionLevel = 0)
         {
             return new AsyncEnumerable<FileInfo>(async yield => {
+
+
+                if (Global.DirlistReadDelayMs > 0)
+                { 
+#if !NOASYNC
+                    await Task.Delay(Global.DirlistReadDelayMs, Global.CancellationToken.Token);     //TODO: config file?
+#else
+                    Global.CancellationToken.Token.WaitHandle.WaitOne(Global.DirlistReadDelayMs);
+#endif
+                }
+
+
 
 #if false //this built-in functio will throw IOException in case some subfolder is an invalid reparse point
                 return new DirectoryInfo(sourceDir)
@@ -1034,6 +1051,7 @@ namespace FolderSync
 
                         if (
                             showAlert
+                            && Global.ShowErrorAlerts
                             && (ConsoleWatch.PrevAlertTime != time || ConsoleWatch.PrevAlertMessage != message)
                         )
                         {
@@ -2101,7 +2119,10 @@ namespace FolderSync
                                 {
                                     if (newFileIsWatchedFile)
                                     {
-                                        await FileUpdated(newContext);
+                                        using (await FileEventLocks.LockAsync(fse.FileSystemInfo.FullName, token))
+                                        {
+                                            await FileUpdated(newContext);
+                                        }
                                     }
 
                                     if (prevFileIsWatchedFile)
@@ -2123,6 +2144,15 @@ namespace FolderSync
                                         }
                                         else
                                         {
+                                            //NB! invalidate file cache even if the src deletions are not mirrored
+
+                                            var otherFullName = await GetOtherFullName(previousContext);
+                                            CachedFileInfo dummy;
+                                            Global.DestAndHistoryFileInfoCache.TryRemove(Extensions.GetLongPath(otherFullName), out dummy);
+
+                                            await InvalidateFileDataInPersistentCache(previousContext);
+
+
                                             if (
                                                 newContext.ForHistory
                                                 || (previousContext.IsSrcPath && Global.MirrorIgnoreSrcDeletions)
@@ -2132,13 +2162,16 @@ namespace FolderSync
                                                 continue;
                                             }
                                             else
-                                            { 
-                                                await FileDeleted(previousContext);
+                                            {
+                                                using (await FileEventLocks.LockAsync(prevFileFSE.FileSystemInfo.FullName, token))
+                                                {
+                                                    await FileDeleted(previousContext);
+                                                }
                                             }
                                         }
-                                    }
+                                    }   //if (prevFileIsWatchedFile)
                                 }
-                            }
+                            }   //if (!fse.FileSystemInfo.FullName.EndsWith("~"))
                         }
                     }
                     else
@@ -2172,27 +2205,39 @@ namespace FolderSync
 
                 try
                 {
-                    if (
-                        context.ForHistory 
-                        || (context.IsSrcPath && Global.MirrorIgnoreSrcDeletions)
-                        || (!context.IsSrcPath && Global.MirrorIgnoreDestDeletions)
-                    )
-                    { 
-                        continue;
-                    }
-                    else if (fse.IsFile)
+                    if (fse.IsFile)
                     {
                         if (IsWatchedFile(fse.FileSystemInfo.FullName, context.ForHistory, isSrcPath))
                         {
-                            await AddMessage(ConsoleColor.Yellow, $"[{(fse.IsFile ? "F" : "D")}][-]:{fse.FileSystemInfo.FullName}", context);
+                            //NB! invalidate file cache even if the src deletions are not mirrored
 
-                            using (await FileEventLocks.LockAsync(fse.FileSystemInfo.FullName, token))
+                            var otherFullName = await GetOtherFullName(context);
+                            CachedFileInfo dummy;
+                            Global.DestAndHistoryFileInfoCache.TryRemove(Extensions.GetLongPath(otherFullName), out dummy);
+
+                            await InvalidateFileDataInPersistentCache(context);
+
+
+                            if (
+                                context.ForHistory
+                                || (context.IsSrcPath && Global.MirrorIgnoreSrcDeletions)
+                                || (!context.IsSrcPath && Global.MirrorIgnoreDestDeletions)
+                            )
                             {
-                                await FileDeleted(context);
+                                continue;
+                            }
+                            else
+                            { 
+                                await AddMessage(ConsoleColor.Yellow, $"[{(fse.IsFile ? "F" : "D")}][-]:{fse.FileSystemInfo.FullName}", context);
+
+                                using (await FileEventLocks.LockAsync(fse.FileSystemInfo.FullName, token))
+                                {
+                                    await FileDeleted(context);
+                                }
                             }
                         }
                     }
-                    else
+                    else    //if (fse.IsFile)
                     {
                         //nothing to do here: the files are likely already deleted by now
                     }
@@ -2305,6 +2350,7 @@ namespace FolderSync
 
                         if (
                             showAlert
+                            && Global.ShowErrorAlerts
                             && (PrevAlertTime != context.Time || PrevAlertMessage != message)
                         )
                         {
@@ -2388,6 +2434,8 @@ namespace FolderSync
                         if (    
                             Global.CacheDestAndHistoryFolders
                             && Global.PersistentCacheDestAndHistoryFolders
+                            && context.IsSrcPath
+                            && (!Global.BidirectionalMirror || context.ForHistory)
                         )
                         {
                             //NB! create file cache before creating the folder so that any files that are concurrently added to the folder upon creating it are all added to cache
@@ -2415,23 +2463,8 @@ namespace FolderSync
 
 
                 //invalidate file data in dirlist cache before file write
-                if (
-                    Global.PersistentCacheDestAndHistoryFolders
-                    && !newFolderCreated    //optimisation
-                )
-                {
-                    using (await Global.PersistentCacheLocks.LockAsync(longOtherDirName, context.Token))
-                    {
-                        var cachedFileInfos = await ReadFileInfoCache(longOtherDirName, context.ForHistory);
-
-                        if (cachedFileInfos != null)
-                        { 
-                            cachedFileInfos.Remove(GetNonFullName(longOtherFullName));
-
-                            await SaveFileInfoCache(cachedFileInfos, longOtherDirName, context.ForHistory);
-                        }
-                    }
-                }
+                if (!newFolderCreated)    //optimisation
+                    await InvalidateFileDataInPersistentCache(context);
 
 
                 var utcNowBeforeSave = DateTime.UtcNow;
@@ -2448,8 +2481,8 @@ namespace FolderSync
 
                 //the file info cache became obsolete for this file
                 if (
-                    context.IsSrcPath 
-                    && Global.CacheDestAndHistoryFolders
+                    Global.CacheDestAndHistoryFolders
+                    && context.IsSrcPath
                     && (!Global.BidirectionalMirror || context.ForHistory)
                 )
                 { 
@@ -2525,6 +2558,34 @@ namespace FolderSync
             }
         }   //public static async Task SaveFileModifications(string fullName, byte[] fileData, byte[] originalData, Context context)
 
+        public static async Task InvalidateFileDataInPersistentCache(Context context)
+        {
+            if (
+                Global.PersistentCacheDestAndHistoryFolders
+                && context.IsSrcPath
+                && (!Global.BidirectionalMirror || context.ForHistory)
+            )
+            {
+                var otherFullName = await GetOtherFullName(context);
+                var longOtherFullName = Extensions.GetLongPath(otherFullName);
+
+                var otherDirName = Extensions.GetDirPathWithTrailingSlash(Path.GetDirectoryName(otherFullName));
+                var longOtherDirName = Extensions.GetLongPath(otherDirName);
+
+                using (await Global.PersistentCacheLocks.LockAsync(longOtherDirName, context.Token))
+                {
+                    var cachedFileInfos = await ReadFileInfoCache(longOtherDirName, context.ForHistory);
+
+                    if (cachedFileInfos != null)
+                    {
+                        cachedFileInfos.Remove(GetNonFullName(longOtherFullName));
+
+                        await SaveFileInfoCache(cachedFileInfos, longOtherDirName, context.ForHistory);
+                    }
+                }
+            }
+        }   //public static async Task InvalidateFileDataInPersistentCache(Context context)
+
 #pragma warning restore AsyncFixer01
     }
 
@@ -2546,8 +2607,6 @@ namespace FolderSync
 
         public enum PROCESSIOPRIORITY : int
         {
-            PROCESSIOPRIORITY_UNKNOWN = -1,
-
             PROCESSIOPRIORITY_VERY_LOW = 0,
             PROCESSIOPRIORITY_LOW,
             PROCESSIOPRIORITY_NORMAL,
