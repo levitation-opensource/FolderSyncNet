@@ -35,7 +35,7 @@ Ready to use. Maintained and in active use.
 			"MirrorIgnoreDestDeletions": false,
 			"MirrorDestPath": "C:\\yourpath\\yourproject-backup\\",
 
-			"EnableHistory": true,
+			"EnableHistory": false,
 			"HistoryDestPath": "C:\\yourpath\\yourproject-history\\",
 			"HistoryVersionFormat": "timestamp_before_ext",
 			"___VersionFormatOptions": "prefix_timestamp | timestamp_before_ext | sufix_timestamp",
