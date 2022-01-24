@@ -945,8 +945,14 @@ namespace FolderSync
             });   //return new AsyncEnumerable<int>(async yield => {
         }   //private static IEnumerable<FileInfo> ProcessSubDirs(DirectoryInfo srcDirInfo, string searchPattern, bool forHistory, int recursionLevel = 0)
 
-        private static async Task WriteException(Exception ex)
+        private static async Task WriteException(Exception ex_in)
         {
+            var ex = ex_in;
+
+            if (ex is TaskCanceledException && Global.CancellationToken.IsCancellationRequested)
+                return;
+
+
             if (ex is AggregateException aggex)
             {
                 await WriteException(aggex.InnerException);
@@ -957,19 +963,53 @@ namespace FolderSync
                 return;
             }
 
+
+
+            ex = ex_in;
+
+            var message = new StringBuilder();
+            message.Append(DateTime.Now);
+            message.AppendLine(" Unhandled exception: ");
+
+            message.AppendLine(ex.GetType().ToString());
+            message.AppendLine(ex.Message);
+            message.AppendLine("Stack Trace:");
+            message.AppendLine(ex.StackTrace);
+
+            while (ex.InnerException != null)
+            {
+                message.AppendLine("");
+                message.Append("Inner exception: ");
+                message.Append(ex.GetType().ToString());
+                message.AppendLine(": ");
+                message.AppendLine(ex.InnerException.Message);
+                message.AppendLine("Inner exception stacktrace: ");
+                message.AppendLine(ex.InnerException.StackTrace);
+
+                ex = ex.InnerException;     //loop
+            }
+
+            message.AppendLine("");
+
+            await FileExtensions.AppendAllTextAsync("UnhandledExceptions.log", message.ToString(), Global.CancellationToken.Token);
+
+
+
             //Console.WriteLine(ex.Message);
-            StringBuilder message = new StringBuilder(ex.Message);
+            message.Clear();
+            message.Append(ex.Message.ToString());
             while (ex.InnerException != null)
             {
                 ex = ex.InnerException;
                 //Console.WriteLine(ex.Message);
-                message.Append(Environment.NewLine + ex.Message);
+                message.AppendLine("");
+                message.Append(ex.Message);
             }
 
 
             var time = DateTime.Now;
             var msg = $"[{time:yyyy.MM.dd HH:mm:ss.ffff}]:{message}";
-            await AddMessage(ConsoleColor.Red, msg, time, showAlert: true);            
+            await AddMessage(ConsoleColor.Red, msg, time, showAlert: true);
         }
 
         private static async Task AddMessage(ConsoleColor color, string message, DateTime time, bool showAlert = false)
@@ -1126,10 +1166,17 @@ namespace FolderSync
         }
 #endif 
 
-        public static async Task WriteException(Exception ex, Context context)
+        public static async Task WriteException(Exception ex_in, Context context)
         {
+            var ex = ex_in;
+
+
             //if (ConsoleWatch.DoingInitialSync)  //TODO: config
             //    return;
+
+
+            if (ex is TaskCanceledException && Global.CancellationToken.IsCancellationRequested)
+                return;
 
 
             if (ex is AggregateException aggex)
@@ -1142,13 +1189,47 @@ namespace FolderSync
                 return;
             }
 
+
+
+            ex = ex_in;
+
+            var message = new StringBuilder();
+            message.Append(DateTime.Now);
+            message.AppendLine(" Unhandled exception: ");
+
+            message.AppendLine(ex.GetType().ToString());
+            message.AppendLine(ex.Message);
+            message.AppendLine("Stack Trace:");
+            message.AppendLine(ex.StackTrace);
+
+            while (ex.InnerException != null)
+            {
+                message.AppendLine("");
+                message.Append("Inner exception: ");
+                message.Append(ex.GetType().ToString());
+                message.AppendLine(": ");
+                message.AppendLine(ex.InnerException.Message);
+                message.AppendLine("Inner exception stacktrace: ");
+                message.AppendLine(ex.InnerException.StackTrace);
+
+                ex = ex.InnerException;     //loop
+            }
+
+            message.AppendLine("");
+
+            await FileExtensions.AppendAllTextAsync("UnhandledExceptions.log", message.ToString(), context.Token);
+
+
+
             //Console.WriteLine(ex.Message);
-            StringBuilder message = new StringBuilder(ex.Message);
+            message.Clear();
+            message.Append(ex.Message.ToString());
             while (ex.InnerException != null)
             {
                 ex = ex.InnerException;
                 //Console.WriteLine(ex.Message);
-                message.Append(Environment.NewLine + ex.Message);
+                message.AppendLine("");
+                message.Append(ex.Message);
             }
 
 
@@ -1530,9 +1611,12 @@ namespace FolderSync
                         {
                             var cachedFileInfos = await ReadFileInfoCache(dirName, context.ForHistory);
 
-                            cachedFileInfos[GetNonFullName(fullName)] = new CachedFileInfo(context.FileInfo, useNonFullPath: true);
+                            if (cachedFileInfos != null)    //TODO: if cachedFileInfos == null then scan entire folder and create cached file infos file
+                            {
+                                cachedFileInfos[GetNonFullName(fullName)] = new CachedFileInfo(context.FileInfo, useNonFullPath: true);
 
-                            await SaveFileInfoCache(cachedFileInfos, dirName, context.ForHistory);
+                                await SaveFileInfoCache(cachedFileInfos, dirName, context.ForHistory);
+                            }
                         }
                     }
                 }
@@ -1773,10 +1857,13 @@ namespace FolderSync
                     using (await Global.PersistentCacheLocks.LockAsync(dirName, token))
                     { 
                         var cachedFileInfos = await ReadFileInfoCache(dirName, forHistory);
+                        
+                        if (cachedFileInfos != null)    //TODO: if cachedFileInfos == null then scan entire folder and create cached file infos file
+                        {
+                            cachedFileInfos[GetNonFullName(fullName)] = new CachedFileInfo(result, useNonFullPath: true);
 
-                        cachedFileInfos[GetNonFullName(fullName)] = new CachedFileInfo(result, useNonFullPath: true);
-
-                        await SaveFileInfoCache(cachedFileInfos, dirName, forHistory);
+                            await SaveFileInfoCache(cachedFileInfos, dirName, forHistory);
+                        }
                     }
                 }
             }
@@ -2300,9 +2387,12 @@ namespace FolderSync
                     {
                         var cachedFileInfos = await ReadFileInfoCache(longOtherDirName, context.ForHistory);
 
-                        cachedFileInfos.Remove(GetNonFullName(longOtherFullName));
+                        if (cachedFileInfos != null)
+                        { 
+                            cachedFileInfos.Remove(GetNonFullName(longOtherFullName));
 
-                        await SaveFileInfoCache(cachedFileInfos, longOtherDirName, context.ForHistory);
+                            await SaveFileInfoCache(cachedFileInfos, longOtherDirName, context.ForHistory);
+                        }
                     }
                 }
 
@@ -2354,9 +2444,12 @@ namespace FolderSync
                         {
                             var cachedFileInfos = await ReadFileInfoCache(longOtherDirName, context.ForHistory);
 
-                            cachedFileInfos[GetNonFullName(longOtherFullName)] = new CachedFileInfo(fileInfo, useNonFullPath: true);
+                            if (cachedFileInfos != null)    //TODO: if cachedFileInfos == null then scan entire folder and create cached file infos file
+                            {
+                                cachedFileInfos[GetNonFullName(longOtherFullName)] = new CachedFileInfo(fileInfo, useNonFullPath: true);
 
-                            await SaveFileInfoCache(cachedFileInfos, longOtherDirName, context.ForHistory);
+                                await SaveFileInfoCache(cachedFileInfos, longOtherDirName, context.ForHistory);
+                            }
                         }
                     }
                 }

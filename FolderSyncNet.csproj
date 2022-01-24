@@ -179,6 +179,7 @@
     <Compile Include="BinaryFileExtensions.cs" />
     <Compile Include="ConfigParser.cs" />
     <Compile Include="Extensions.cs" />
+    <Compile Include="FileExtensions.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Synchronisation.cs" />
@@ -191,10 +192,10 @@
     <None Include="appsettings.debug2.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Include="appsettings.debug4.json">
+    <None Include="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Include="appsettings.json">
+    <None Include="appsettings.debug5.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Include="appsettings.example.json">
