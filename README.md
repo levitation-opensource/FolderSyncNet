@@ -18,7 +18,7 @@ Ready to use. Maintained and in active use.
 			
 			"CacheDestAndHistoryFolders": false,
 			"PersistentCacheDestAndHistoryFolders": false,
-			"CachePath": "C:\\yourpath\\yourproject-cache\\",
+			"CachePath": ".\\cache\\",
 
 			"UsePolling": false,
 			"PollingDelay": 60,
