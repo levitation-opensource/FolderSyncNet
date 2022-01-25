@@ -22,12 +22,14 @@ Ready to use. Maintained and in active use.
 
 			"UsePolling": false,
 			"PollingDelay": 60,
-			"RetryCountOnEmptyDirlist": 5,
+			"RetryCountOnEmptyDirlist": 0,
 
 			"UseIdlePriority": false,
+			"DirlistReadDelayMs": 0,
 			"FileWriteDelayMs": 0,
 			"WriteBufferKB": 0,
 			"BufferWriteDelayMs": 0,
+			"ShowErrorAlerts": true,
 
 			"EnableMirror": true,
 			"Bidirectional": false,
