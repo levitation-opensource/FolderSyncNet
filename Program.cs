@@ -25,6 +25,7 @@ using myoddweb.directorywatcher;
 using myoddweb.directorywatcher.interfaces;
 using Nito.AspNetBackgroundTasks;
 using Nito.AsyncEx;
+using NReco.Text;
 
 namespace FolderSync
 {
@@ -71,26 +72,34 @@ namespace FolderSync
         public static bool? CaseSensitiveFilenames = null;   //null: default behaviour depending on OS
 
 
-        public static List<string> MirrorWatchedExtension = new List<string>() { "*" };
+        public static HashSet<string> MirrorWatchedExtension = new HashSet<string>() { "*" };
+        public static HashSet<string> MirrorExcludedExtensions = new HashSet<string>() { "*~", "tmp" };
 
-        public static List<string> MirrorExcludedExtensions = new List<string>() { "*~", "tmp" };
-        public static List<string> MirrorIgnorePathsStartingWith = new List<string>();
-        public static List<string> MirrorIgnorePathsContaining = new List<string>();
+        public static List<string> MirrorIgnorePathsStartingWithList = new List<string>();
+        public static List<string> MirrorIgnorePathsContainingList = new List<string>();
+        public static List<string> MirrorIgnorePathsEndingWithList = new List<string>();
+
+        public static bool MirrorIgnorePathsContainingACHasAny = false;
+        public static AhoCorasickDoubleArrayTrie<bool> MirrorIgnorePathsContainingAC = new AhoCorasickDoubleArrayTrie<bool>();
 
         public static string MirrorDestPath = "";
 
 
         public static bool EnableHistory = false;
-        public static List<string> HistoryWatchedExtension = new List<string>() { "*" };
+        public static HashSet<string> HistoryWatchedExtension = new HashSet<string>() { "*" };
+        public static HashSet<string> HistoryExcludedExtensions = new HashSet<string>() { "*~", "bak", "tmp" };
+
+        public static List<string> HistoryIgnorePathsStartingWithList = new List<string>();
+        public static List<string> HistoryIgnorePathsContainingList = new List<string>();
+        public static List<string> HistoryIgnorePathsEndingWithList = new List<string>();
+
+        public static bool HistoryIgnorePathsContainingACHasAny = false;
+        public static AhoCorasickDoubleArrayTrie<bool> HistoryIgnorePathsContainingAC = new AhoCorasickDoubleArrayTrie<bool>();
+
+        public static string HistoryDestPath = "";
 
         public static string HistoryVersionFormat = "TIMESTAMP_BEFORE_EXT";
         public static string HistoryVersionSeparator = ".";
-
-        public static List<string> HistoryExcludedExtensions = new List<string>() { "*~", "bak", "tmp" };
-        public static List<string> HistoryIgnorePathsStartingWith = new List<string>();
-        public static List<string> HistoryIgnorePathsContaining = new List<string>();
-
-        public static string HistoryDestPath = "";
 
 
         public static long SrcPathMinFreeSpace = 0;
@@ -199,6 +208,15 @@ namespace FolderSync
 
     internal class Program
     {
+        //let null char mark start and end of a filename
+        //https://stackoverflow.com/questions/54205087/how-can-i-create-a-file-with-null-bytes-in-the-filename
+        //https://stackoverflow.com/questions/1976007/what-characters-are-forbidden-in-windows-and-linux-directory-names
+        //https://serverfault.com/questions/242110/which-common-characters-are-illegal-in-unix-and-windows-filesystems
+        public static readonly string NullChar = new string(new char[]{ (char)0 });
+
+        public static readonly string DirectorySeparatorChar = new string(new char[] { Path.DirectorySeparatorChar });
+
+
         private static byte[] GetHash(string inputString)
         {
 #pragma warning disable SCS0006     //Warning	SCS0006	Weak hashing function
@@ -280,13 +298,25 @@ namespace FolderSync
 
             Global.MirrorDestPath = Extensions.GetDirPathWithTrailingSlash(fileConfig.GetTextUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorDestPath", "DestPath"));
 
-            Global.MirrorWatchedExtension = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorWatchedExtensions", "MirrorWatchedExtension", "WatchedExtensions", "WatchedExtension");
+            Global.MirrorWatchedExtension = new HashSet<string>(fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorWatchedExtensions", "MirrorWatchedExtension", "WatchedExtensions", "WatchedExtension"));
 
             //this would need Microsoft.Extensions.Configuration and Microsoft.Extensions.Configuration.Binder packages
-            Global.MirrorExcludedExtensions = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorExcludedExtensions", "MirrorExcludedExtension", "ExcludedExtensions", "ExcludedExtension");   //NB! UpperOnWindows
+            Global.MirrorExcludedExtensions = new HashSet<string>(fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorExcludedExtensions", "MirrorExcludedExtension", "ExcludedExtensions", "ExcludedExtension"));   //NB! UpperOnWindows
 
-            Global.MirrorIgnorePathsStartingWith = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorIgnorePathsStartingWith", "IgnorePathsStartingWith");   //NB! UpperOnWindows
-            Global.MirrorIgnorePathsContaining = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorIgnorePathsContaining", "MirrorIgnorePathContaining", "IgnorePathsContaining", "IgnorePathContaining");   //NB! UpperOnWindows
+            Global.MirrorIgnorePathsStartingWithList = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorIgnorePathsStartingWith", "MirrorIgnorePathStartingWith", "IgnorePathsStartingWith", "IgnorePathStartingWith");   //NB! UpperOnWindows
+            Global.MirrorIgnorePathsContainingList = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorIgnorePathsContaining", "MirrorIgnorePathContaining", "IgnorePathsContaining", "IgnorePathContaining");   //NB! UpperOnWindows
+            Global.MirrorIgnorePathsEndingWithList = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorIgnorePathsEndingWith", "MirrorIgnorePathEndingWith", "IgnorePathsEndingWith", "IgnorePathEndingWith");   //NB! UpperOnWindows
+
+            var mirrorACInput = Global.MirrorIgnorePathsStartingWithList.Select(x => new KeyValuePair<string, bool>(NullChar + x, false))
+                .Concat(Global.MirrorIgnorePathsContainingList.Select(x => new KeyValuePair<string, bool>(x, false)))
+                .Concat(Global.MirrorIgnorePathsEndingWithList.Select(x => new KeyValuePair<string, bool>(x + NullChar, false)))
+                .ToList();
+
+            if (mirrorACInput.Any())  //needed to avoid exceptions
+            {
+                Global.MirrorIgnorePathsContainingACHasAny = true;
+                Global.MirrorIgnorePathsContainingAC.Build(mirrorACInput);
+            }
 
 
 
@@ -294,16 +324,28 @@ namespace FolderSync
 
             Global.HistoryDestPath = Extensions.GetDirPathWithTrailingSlash(fileConfig.GetTextUpperOnWindows(Global.CaseSensitiveFilenames, "HistoryDestPath"));
 
-            Global.HistoryWatchedExtension = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "HistoryWatchedExtensions", "HistoryWatchedExtension", "WatchedExtensions", "WatchedExtension");
+            Global.HistoryWatchedExtension = new HashSet<string>(fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "HistoryWatchedExtensions", "HistoryWatchedExtension", "WatchedExtensions", "WatchedExtension"));
 
             Global.HistoryVersionFormat = fileConfig.GetTextUpper("HistoryVersionFormat") ?? "TIMESTAMP_BEFORE_EXT";
             Global.HistoryVersionSeparator = fileConfig.GetText("HistoryVersionSeparator") ?? ".";  //NB! no uppercase transformation here
 
             //this would need Microsoft.Extensions.Configuration and Microsoft.Extensions.Configuration.Binder packages
-            Global.HistoryExcludedExtensions = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "HistoryExcludedExtensions", "HistoryExcludedExtension", "ExcludedExtensions", "ExcludedExtension");   //NB! UpperOnWindows
+            Global.HistoryExcludedExtensions = new HashSet<string>(fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "HistoryExcludedExtensions", "HistoryExcludedExtension", "ExcludedExtensions", "ExcludedExtension"));   //NB! UpperOnWindows
 
-            Global.HistoryIgnorePathsStartingWith = fileConfig.GetListUpper("HistoryIgnorePathsStartingWith", "HistoryIgnorePathStartingWith", "IgnorePathsStartingWith", "IgnorePathStartingWith");   //NB! UpperOnWindows
-            Global.HistoryIgnorePathsContaining = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "HistoryIgnorePathsContaining", "HistoryIgnorePathContaining", "IgnorePathsContaining", "IgnorePathContaining");   //NB! UpperOnWindows
+            Global.HistoryIgnorePathsStartingWithList = fileConfig.GetListUpper("HistoryIgnorePathsStartingWith", "HistoryIgnorePathStartingWith", "IgnorePathsStartingWith", "IgnorePathStartingWith");   //NB! UpperOnWindows
+            Global.HistoryIgnorePathsContainingList = fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "HistoryIgnorePathsContaining", "HistoryIgnorePathContaining", "IgnorePathsContaining", "IgnorePathContaining");   //NB! UpperOnWindows
+            Global.HistoryIgnorePathsEndingWithList = fileConfig.GetListUpper("HistoryIgnorePathsEndingWith", "HistoryIgnorePathEndingWith", "IgnorePathsEndingWith", "IgnorePathEndingWith");   //NB! UpperOnWindows
+
+            var historyACInput = Global.HistoryIgnorePathsStartingWithList.Select(x => new KeyValuePair<string, bool>(NullChar + x, false))
+                .Concat(Global.HistoryIgnorePathsContainingList.Select(x => new KeyValuePair<string, bool>(x, false)))
+                .Concat(Global.HistoryIgnorePathsEndingWithList.Select(x => new KeyValuePair<string, bool>(x + NullChar, false)))
+                .ToList();
+
+            if (historyACInput.Any())  //needed to avoid exceptions
+            {
+                Global.HistoryIgnorePathsContainingACHasAny = true;
+                Global.HistoryIgnorePathsContainingAC.Build(historyACInput);
+            }
 
 
 
@@ -936,12 +978,15 @@ namespace FolderSync
                         continue;
 
 
-                    var nonFullNameInvariant = ConsoleWatch.GetNonFullName(dirInfo.FullName) + Path.PathSeparator;
+                    var nonFullNameInvariantWithLeadingSlash = DirectorySeparatorChar + Extensions.GetDirPathWithTrailingSlash(ConsoleWatch.GetNonFullName(dirInfo.FullName.ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames)));
                     if (!forHistory)
                     {
                         if (
-                            Global.MirrorIgnorePathsStartingWith.Any(x => nonFullNameInvariant.StartsWith(x))
-                            || Global.MirrorIgnorePathsContaining.Any(x => nonFullNameInvariant.Contains(x))
+                            //Global.MirrorIgnorePathsStartingWith.Any(x => nonFullNameInvariantWithLeadingSlash.StartsWith(x))
+                            //|| Global.MirrorIgnorePathsContaining.Any(x => nonFullNameInvariantWithLeadingSlash.Contains(x))
+                            //|| Global.MirrorIgnorePathsEndingWith.Any(x => nonFullNameInvariantWithLeadingSlash.EndsWith(x))
+                            Global.MirrorIgnorePathsContainingACHasAny  //needed to avoid exceptions
+                            && Global.MirrorIgnorePathsContainingAC.ParseText(NullChar + nonFullNameInvariantWithLeadingSlash/* + NullChar*/).Any() //NB! no NullChar appended to end since it is dir path not complete file path
                         )
                         {
                             continue;
@@ -950,8 +995,11 @@ namespace FolderSync
                     else
                     {
                         if (
-                            Global.HistoryIgnorePathsStartingWith.Any(x => nonFullNameInvariant.StartsWith(x))
-                            || Global.HistoryIgnorePathsContaining.Any(x => nonFullNameInvariant.Contains(x))
+                            //Global.HistoryIgnorePathsStartingWith.Any(x => nonFullNameInvariantWithLeadingSlash.StartsWith(x))
+                            //|| Global.HistoryIgnorePathsContaining.Any(x => nonFullNameInvariantWithLeadingSlash.Contains(x))
+                            //|| Global.HistoryIgnorePathsEndingWith.Any(x => nonFullNameInvariantWithLeadingSlash.EndsWith(x))
+                            Global.HistoryIgnorePathsContainingACHasAny  //needed to avoid exceptions
+                            && Global.HistoryIgnorePathsContainingAC.ParseText(NullChar + nonFullNameInvariantWithLeadingSlash/* + NullChar*/).Any() //NB! no NullChar appended to end since it is dir path not complete file path
                         )
                         {
                             continue;
@@ -1558,17 +1606,42 @@ namespace FolderSync
                 try
                 {
                     var cachedFileInfosDict = Extensions.DeserializeBinary<Dictionary<string, CachedFileInfo>>(cacheDataTuple.Item1);
+
+                    //TODO: add parent folders to paths if they were removed
+
+#if false
+                    //backwards compatibility: add slashes to the front of dict keys
+                    cachedFileInfosDict = cachedFileInfosDict
+                        .ToDictionary
+                        (
+                            kvp => {
+                                if (!kvp.Key.StartsWith(DirectorySeparatorChar))
+                                    return DirectorySeparatorChar + kvp.Key;
+                                else
+                                    return kvp.Key;
+                            },
+
+                            kvp => {
+                                if (!kvp.Value.FullName.StartsWith(DirectorySeparatorChar))
+                                    kvp.Value.FullName = DirectorySeparatorChar + kvp.Value.FullName;
+
+                                return kvp.Value;
+                            }
+                        );
+#endif
+
                     return cachedFileInfosDict;
                 }
                 catch (SerializationException)
                 {
                     //TODO: log error
                 }
-            }
+            }   //if (cacheDataTuple?.Item1 != null)
 
 
             return null;
-        }
+
+        }   //public static async Task<Dictionary<string, CachedFileInfo>> ReadFileInfoCache(string dirName, bool forHistory)
 
         public static async Task SaveFileInfoCache(Dictionary<string, CachedFileInfo> dirCache, string dirName, bool forHistory)
         {
@@ -1581,6 +1654,8 @@ namespace FolderSync
 
                     if (!await Extensions.FSOperation(() => Directory.Exists(cacheDirName), Global.CancellationToken.Token))
                         await Extensions.FSOperation(() => Directory.CreateDirectory(cacheDirName), Global.CancellationToken.Token);
+
+                    //TODO: remove parent folders from paths
 
                     var serialisedData = Extensions.SerializeBinary(dirCache);
                     await FileExtensions.WriteAllBytesAsync(cacheFileName, serialisedData, createTempFileFirst: true, cancellationToken: Global.CancellationToken.Token);
@@ -2017,7 +2092,7 @@ namespace FolderSync
                     || Global.MirrorWatchedExtension.Contains("*")
                 )
                 &&
-                Global.MirrorExcludedExtensions.All(x =>
+                Global.MirrorExcludedExtensions.All(x =>  //TODO: optimise
 
                     !fullNameInvariant.EndsWith("." + x)
                     &&
@@ -2029,11 +2104,14 @@ namespace FolderSync
                 )
             )
             {
-                var nonFullNameInvariant = GetNonFullName(fullNameInvariant);
+                var nonFullNameInvariantWithLeadingSlash = Program.DirectorySeparatorChar + GetNonFullName(fullNameInvariant);
 
                 if (
-                    Global.MirrorIgnorePathsStartingWith.Any(x => nonFullNameInvariant.StartsWith(x))
-                    || Global.MirrorIgnorePathsContaining.Any(x => nonFullNameInvariant.Contains(x))
+                    //Global.MirrorIgnorePathsStartingWith.Any(x => nonFullNameInvariantWithLeadingSlash.StartsWith(x))
+                    //|| Global.MirrorIgnorePathsContaining.Any(x => nonFullNameInvariantWithLeadingSlash.Contains(x))
+                    //|| Global.MirrorIgnorePathsEndingWith.Any(x => nonFullNameInvariantWithLeadingSlash.EndsWith(x))
+                    Global.MirrorIgnorePathsContainingACHasAny  //needed to avoid exceptions
+                    && Global.MirrorIgnorePathsContainingAC.ParseText(Program.NullChar + nonFullNameInvariantWithLeadingSlash + Program.NullChar).Any()
                 )
                 {
                     return false;
@@ -2049,7 +2127,7 @@ namespace FolderSync
                     || Global.HistoryWatchedExtension.Contains("*")
                 )
                 &&
-                Global.HistoryExcludedExtensions.All(x =>
+                Global.HistoryExcludedExtensions.All(x =>  //TODO: optimise
 
                     !fullNameInvariant.EndsWith("." + x)
                     &&
@@ -2061,11 +2139,14 @@ namespace FolderSync
                 )
             )
             {
-                var nonFullNameInvariant = GetNonFullName(fullNameInvariant);
+                var nonFullNameInvariantWithLeadingSlash = Program.DirectorySeparatorChar + GetNonFullName(fullNameInvariant);
 
                 if (
-                    Global.HistoryIgnorePathsStartingWith.Any(x => nonFullNameInvariant.StartsWith(x))
-                    || Global.HistoryIgnorePathsContaining.Any(x => nonFullNameInvariant.Contains(x))
+                    //Global.HistoryIgnorePathsStartingWith.Any(x => nonFullNameInvariantWithLeadingSlash.StartsWith(x))
+                    //|| Global.HistoryIgnorePathsContaining.Any(x => nonFullNameInvariantWithLeadingSlash.Contains(x))
+                    //|| Global.HistoryIgnorePathsEndingWith.Any(x => nonFullNameInvariantWithLeadingSlash.EndsWith(x))
+                    Global.HistoryIgnorePathsContainingACHasAny  //needed to avoid exceptions
+                    && Global.HistoryIgnorePathsContainingAC.ParseText(Program.NullChar + nonFullNameInvariantWithLeadingSlash + Program.NullChar).Any()
                 )
                 {
                     return false;

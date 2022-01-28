@@ -6,4 +6,4 @@ MyOddWeb.DirectoryWatcher 0.1.8, 2018 Florent Guelfucci, MIT Licence. https://ww
 .NET runtime source, .NET Foundation and Contributors, MIT License. https://github.com/dotnet/runtime/blob/5ddc873d9ea6cd4bc6a935fec3057fe89a6932aa/src/libraries/System.IO.FileSystem/src/System/IO/File.cs
 Nito.AspNetBackgroundTasks 1.0.0, Stephen Cleary, MIT License. https://www.nuget.org/packages/Nito.AspNetBackgroundTasks/
 Nito.AsyncEx 5.0.0, Stephen Cleary, MIT License. https://www.nuget.org/packages/Nito.AsyncEx.Coordination/
-
+NReco.Text.AhoCorasickDoubleArrayTrie 1.0.2, 2017-2019 Vitaliy Fedorchenko, Apache-2.0 License. https://www.nuget.org/packages/NReco.Text.AhoCorasickDoubleArrayTrie

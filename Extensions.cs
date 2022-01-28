@@ -52,7 +52,10 @@ namespace FolderSync
 
             //@"\\?\" prefix is needed for reading from long paths: https://stackoverflow.com/questions/44888844/directorynotfoundexception-when-using-long-paths-in-net-4-7 and https://superuser.com/questions/1617012/support-of-the-unc-server-share-syntax-in-windows
 
-            if (path.Substring(0, 2) == @"\\")   //network path or path already starting with \\?\
+            if (
+                path.Length >= 2    //necessary to avoid exceptions in Substring()
+                && path.Substring(0, 2) == @"\\"   //network path or path already starting with \\?\ 
+            )
             {
                 return path;
             }
