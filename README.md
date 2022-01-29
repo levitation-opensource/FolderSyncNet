@@ -51,6 +51,7 @@ Ready to use. Maintained and in active use.
 				"tmp"
 			],
 			"MirrorIgnorePathsStartingWith": [
+				"\\Temp\\"
 			],
 			"MirrorIgnorePathsContaining": [
 				"\\~$",
@@ -59,6 +60,8 @@ Ready to use. Maintained and in active use.
 				"\\Logs\\",
 				"\\node_modules\\",
 				"\\wwwroot\\dist\\"
+			],
+			"MirrorIgnorePathsEndingWith": [
 			],
 
 			"HistoryWatchedExtensions": [
@@ -70,6 +73,7 @@ Ready to use. Maintained and in active use.
 				"tmp"
 			],
 			"HistoryIgnorePathsStartingWith": [
+				"\\Temp\\"
 			],
 			"HistoryIgnorePathsContaining": [
 				"\\~$",
@@ -83,6 +87,8 @@ Ready to use. Maintained and in active use.
 				"\\Logs\\",
 				"\\node_modules\\",
 				"\\wwwroot\\dist\\"
+			],
+			"HistoryIgnorePathsEndingWith": [
 			]
 		}
 	}
