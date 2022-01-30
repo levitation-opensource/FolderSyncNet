@@ -9,6 +9,8 @@ Ready to use. Maintained and in active use.
 	{
 		"Files": {
 			"SrcPath": "C:\\yourpath\\yourproject\\",
+			"SrcPathMinFreeSpace": 0,
+			"RetryCountOnSrcFileOpenError": 5,
 
 			"MaxFileSizeMB": 2048,
 			"CaseSensitiveFilenames": null,
@@ -36,9 +38,11 @@ Ready to use. Maintained and in active use.
 			"MirrorIgnoreSrcDeletions": false,
 			"MirrorIgnoreDestDeletions": false,
 			"MirrorDestPath": "C:\\yourpath\\yourproject-backup\\",
+			"MirrorDestPathMinFreeSpace": 0,
 
 			"EnableHistory": false,
 			"HistoryDestPath": "C:\\yourpath\\yourproject-history\\",
+			"HistoryDestPathMinFreeSpace": 0,
 			"HistoryVersionFormat": "timestamp_before_ext",
 			"___VersionFormatOptions": "prefix_timestamp | timestamp_before_ext | sufix_timestamp",
 			"HistoryVersionSeparator": ".",
