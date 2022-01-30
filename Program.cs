@@ -50,6 +50,7 @@ namespace FolderSync
         
         
         public static int RetryCountOnEmptyDirlist = 0;
+        public static int RetryCountOnSrcFileOpenError = 5;
 
 
         public static string SrcPath = "";
@@ -258,6 +259,7 @@ namespace FolderSync
 
 
             Global.RetryCountOnEmptyDirlist = (int?)fileConfig.GetLong("RetryCountOnEmptyDirlist") ?? Global.RetryCountOnEmptyDirlist;
+            Global.RetryCountOnSrcFileOpenError = (int?)fileConfig.GetLong("RetryCountOnSrcFileOpenError") ?? Global.RetryCountOnSrcFileOpenError;
 
 
             Global.UseIdlePriority = fileConfig.GetTextUpper("UseIdlePriority") == "TRUE";   //default is false
@@ -624,9 +626,9 @@ namespace FolderSync
         {
             return new AsyncEnumerable<FileInfo>(async yield => {
 
-#if DEBUG
+#if DEBUG && false
                 if (initialSyncMessageContext?.IsInitialScan == true)
-                    await ConsoleWatch.AddMessage(ConsoleColor.Gray, "Scanning folder " + Extensions.GetLongPath(srcDirInfo.FullName), initialSyncMessageContext);
+                    await ConsoleWatch.AddMessage(ConsoleColor.Blue, "Scanning folder " + Extensions.GetLongPath(srcDirInfo.FullName), initialSyncMessageContext);
 #endif
 
 
@@ -1843,10 +1845,13 @@ namespace FolderSync
                         Tuple<byte[], long> fileDataTuple = null;
                         try
                         { 
-                            fileDataTuple = await FileExtensions.ReadAllBytesAsync(Extensions.GetLongPath(context.Event.FullName), context.Token, maxFileSize);
+                            fileDataTuple = await FileExtensions.ReadAllBytesAsync(Extensions.GetLongPath(context.Event.FullName), context.Token, maxFileSize, retryCount: Global.RetryCountOnSrcFileOpenError);
                             if (fileDataTuple.Item1 == null)   //maximum length exceeded
                             {
-                                await AddMessage(ConsoleColor.Red, $"Error synchronising updates from file {context.Event.FullName} : fileLength > maxFileSize : {fileDataTuple.Item2} > {maxFileSize}", context);
+                                if (fileDataTuple.Item2 >= 0)
+                                    await AddMessage(ConsoleColor.Red, $"Error synchronising updates from file {context.Event.FullName} : fileLength > maxFileSize : {fileDataTuple.Item2} > {maxFileSize}", context);
+                                else
+                                    await AddMessage(ConsoleColor.Red, $"Error synchronising updates from file {context.Event.FullName}", context);
 
                                 return; //TODO: log error?
                             }
@@ -2380,7 +2385,7 @@ namespace FolderSync
                             //check for file type only after checking IsWatchedFile first since file type checking might already be a slow operation
                             if (await GetIsFile(context))     //for some reason fse.IsFile is set even for folders
                             { 
-                                await AddMessage(ConsoleColor.Blue, $"[{(fse.IsFile ? "F" : "D")}][T]:{fse.FileSystemInfo.FullName}", context);
+                                await AddMessage(ConsoleColor.Gray, $"[{(fse.IsFile ? "F" : "D")}][T]:{fse.FileSystemInfo.FullName}", context);
 
                                 using (await FileEventLocks.LockAsync(fse.FileSystemInfo.FullName, token))
                                 {

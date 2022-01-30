@@ -91,7 +91,6 @@ namespace FolderSync
         public static async Task<T[]> DirListOperation<T>(Func<T[]> func, int retryCount, CancellationToken token)
         {
             retryCount = Math.Max(0, retryCount);
-
             for (int i = -1; i < retryCount; i++)
             { 
                 //T result = await Task.Run(func).WaitAsync(token);
@@ -108,7 +107,7 @@ namespace FolderSync
 #endif
 
                 if (i + 1 < retryCount)     //do not sleep after last try
-                { 
+                {
 #if !NOASYNC
                     await Task.Delay(1000, token);     //TODO: config file?
 #else

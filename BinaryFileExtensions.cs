@@ -17,7 +17,7 @@ namespace FolderSync
 {
     public static partial class FileExtensions
     {
-        public static int MaxByteArraySize = 0x7FFFFFC7; //https://docs.microsoft.com/en-us/dotnet/framework/configure-apps/file-schema/runtime/gcallowverylargeobjects-element?redirectedfrom=MSDN#remarks
+        public static long MaxByteArraySize = 0x7FFFFFC7; //https://docs.microsoft.com/en-us/dotnet/framework/configure-apps/file-schema/runtime/gcallowverylargeobjects-element?redirectedfrom=MSDN#remarks
 
         //https://stackoverflow.com/questions/18472867/checking-equality-for-two-byte-arrays/
         public static bool BinaryEqual(Binary a, Binary b)
@@ -25,14 +25,16 @@ namespace FolderSync
             return a.Equals(b);
         }
 
-        public static async Task<Tuple<byte[], long>> ReadAllBytesAsync(string path, CancellationToken cancellationToken = default(CancellationToken), long maxFileSize = 0)
+        public static async Task<Tuple<byte[], long>> ReadAllBytesAsync(string path, CancellationToken cancellationToken = default(CancellationToken), long maxFileSize = 0, int retryCount = 0)
         {
             if (path == null)
                 throw new ArgumentNullException(nameof(path));
             if (path.Length == 0)
                 throw new ArgumentException("Argument_EmptyPath: {0}", nameof(path));
 
-            while (true)
+
+            retryCount = Math.Max(0, retryCount);
+            for (int i = -1; i < retryCount; i++)
             {
                 if (cancellationToken.IsCancellationRequested)
                     return await Task.FromCanceled<Tuple<byte[], long>>(cancellationToken);
@@ -67,7 +69,8 @@ namespace FolderSync
                 )
                 {
                     //retry after delay
-                    try
+
+                    if (i + 1 < retryCount)     //do not sleep after last try
                     {
 #if !NOASYNC
                         await Task.Delay(1000, cancellationToken);     //TODO: config file?
@@ -75,13 +78,10 @@ namespace FolderSync
                         cancellationToken.WaitHandle.WaitOne(1000);
 #endif
                     }
-                    catch (TaskCanceledException)
-                    {
-                        //do nothing here
-                        return await Task.FromCanceled<Tuple<byte[], long>>(cancellationToken);
-                    }
                 }
             }
+
+            return new Tuple<byte[], long>(null, -1);
         }
 
         public static async Task WriteAllBytesAsync(string path, byte[] contents, bool createTempFileFirst, CancellationToken cancellationToken = default(CancellationToken), int writeBufferKB = 0, int bufferWriteDelayMs = 0)
@@ -147,6 +147,7 @@ namespace FolderSync
                 catch (IOException)
                 {
                     //retry after delay
+
 #if !NOASYNC
                     await Task.Delay(1000, cancellationToken);     //TODO: config file?
 #else
