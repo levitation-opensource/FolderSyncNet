@@ -440,7 +440,7 @@ namespace FolderSync
                     {
                         await ConsoleWatch.AddMessage(ConsoleColor.White, "Doing initial synchronisation...", initialSyncMessageContext);
 
-                        await ScanFolders(isInitialScan: true);
+                        await ScanFolders(initialSyncMessageContext: initialSyncMessageContext);
 
                         BackgroundTaskManager.Run(async () =>
                         {
@@ -461,7 +461,7 @@ namespace FolderSync
                                 Global.CancellationToken.Token.WaitHandle.WaitOne(Global.PollingDelay * 1000);
 #endif
 
-                                await ScanFolders(isInitialScan: false);
+                                await ScanFolders(initialSyncMessageContext: null);
                             }
                         
                         }   //if (Global.UsePolling)
@@ -497,7 +497,7 @@ namespace FolderSync
         private static Dictionary<string, FileInfo> MirrorSrcPrevFileInfos = new Dictionary<string, FileInfo>();
         private static Dictionary<string, FileInfo> MirrorDestPrevFileInfos = new Dictionary<string, FileInfo>();
 
-        private static async Task ScanFolders(bool isInitialScan)
+        private static async Task ScanFolders(Context initialSyncMessageContext)
         {
             bool keepFileInfosForLaterPolling = Global.UsePolling;
 
@@ -505,7 +505,7 @@ namespace FolderSync
             if (Global.EnableHistory)
             {
                 var historySrcPrevFileInfosRef = new FileInfosRef(HistorySrcPrevFileInfos);
-                await ScanFolder(historySrcPrevFileInfosRef, Global.SrcPath, "*." + (Global.HistoryWatchedExtension.Count == 1 ? Global.HistoryWatchedExtension.Single() : "*"), isSrcPath: true, forHistory: true, keepFileInfosForLaterPolling: keepFileInfosForLaterPolling, isInitialScan: isInitialScan);
+                await ScanFolder(historySrcPrevFileInfosRef, Global.SrcPath, "*." + (Global.HistoryWatchedExtension.Count == 1 ? Global.HistoryWatchedExtension.Single() : "*"), isSrcPath: true, forHistory: true, keepFileInfosForLaterPolling: keepFileInfosForLaterPolling, initialSyncMessageContext: initialSyncMessageContext);
                 HistorySrcPrevFileInfos = historySrcPrevFileInfosRef.Value;
             }
 
@@ -513,7 +513,7 @@ namespace FolderSync
             if (Global.EnableMirror)
             {
                 var mirrorSrcPrevFileInfosRef = new FileInfosRef(MirrorSrcPrevFileInfos);
-                await ScanFolder(mirrorSrcPrevFileInfosRef, Global.SrcPath, "*." + (Global.MirrorWatchedExtension.Count == 1 ? Global.MirrorWatchedExtension.Single() : "*"), isSrcPath: true, forHistory: false, keepFileInfosForLaterPolling: keepFileInfosForLaterPolling, isInitialScan: isInitialScan);
+                await ScanFolder(mirrorSrcPrevFileInfosRef, Global.SrcPath, "*." + (Global.MirrorWatchedExtension.Count == 1 ? Global.MirrorWatchedExtension.Single() : "*"), isSrcPath: true, forHistory: false, keepFileInfosForLaterPolling: keepFileInfosForLaterPolling, initialSyncMessageContext: initialSyncMessageContext);
                 MirrorSrcPrevFileInfos = mirrorSrcPrevFileInfosRef.Value;
             }
 
@@ -521,11 +521,11 @@ namespace FolderSync
             {
                 //3. Do initial mirror synchronisation from dest to src folder   //TODO: config for enabling and ordering of this operation
                 var mirrorDestPrevFileInfosRef = new FileInfosRef(MirrorDestPrevFileInfos);
-                await ScanFolder(mirrorDestPrevFileInfosRef, Global.MirrorDestPath, "*." + (Global.MirrorWatchedExtension.Count == 1 ? Global.MirrorWatchedExtension.Single() : "*"), isSrcPath: false, forHistory: false, keepFileInfosForLaterPolling: keepFileInfosForLaterPolling, isInitialScan: isInitialScan);
+                await ScanFolder(mirrorDestPrevFileInfosRef, Global.MirrorDestPath, "*." + (Global.MirrorWatchedExtension.Count == 1 ? Global.MirrorWatchedExtension.Single() : "*"), isSrcPath: false, forHistory: false, keepFileInfosForLaterPolling: keepFileInfosForLaterPolling, initialSyncMessageContext: initialSyncMessageContext);
                 MirrorDestPrevFileInfos = mirrorDestPrevFileInfosRef.Value;
             }
 
-            if (isInitialScan)
+            if (initialSyncMessageContext?.IsInitialScan == true)
                 InitialSyncCountdownEvent.Signal();
         }
 
@@ -540,11 +540,11 @@ namespace FolderSync
             }
         }
 
-        private static async Task ScanFolder(FileInfosRef PrevFileInfos, string path, string extension, bool isSrcPath, bool forHistory, bool keepFileInfosForLaterPolling, bool isInitialScan)
+        private static async Task ScanFolder(FileInfosRef PrevFileInfos, string path, string extension, bool isSrcPath, bool forHistory, bool keepFileInfosForLaterPolling, Context initialSyncMessageContext)
         {
             var NewFileInfos = !Global.MirrorIgnoreSrcDeletions ? new Dictionary<string, FileInfo>() : null;
 
-            var fileInfos = ProcessSubDirs(new DirectoryInfo(Extensions.GetLongPath(path)), extension, isSrcPath, forHistory);
+            var fileInfos = ProcessSubDirs(new DirectoryInfo(Extensions.GetLongPath(path)), extension, isSrcPath, forHistory, initialSyncMessageContext: initialSyncMessageContext);
             await fileInfos.ForEachAsync(fileInfo => 
             {
                 if (!Global.MirrorIgnoreSrcDeletions)
@@ -556,7 +556,7 @@ namespace FolderSync
                     if (Global.MirrorIgnoreSrcDeletions)
                         PrevFileInfos.Value.Add(fileInfo.FullName, fileInfo);
 
-                    if (isInitialScan)
+                    if (initialSyncMessageContext?.IsInitialScan == true)
                         InitialSyncCountdownEvent.AddCount();
 
                     BackgroundTaskManager.Run(async () => 
@@ -565,10 +565,10 @@ namespace FolderSync
                         (
                             new DummyFileSystemEvent(fileInfo),
                             Global.CancellationToken.Token,
-                            isInitialScan
+                            initialSyncMessageContext?.IsInitialScan == true
                         );
 
-                        if (isInitialScan)
+                        if (initialSyncMessageContext?.IsInitialScan == true)
                             InitialSyncCountdownEvent.Signal();
                     });
                 }
@@ -620,9 +620,14 @@ namespace FolderSync
 
         }   //private static async Task ScanFolder(string path, string extension, bool forHistory, bool keepFileInfosForLaterPolling)
 
-        private static IAsyncEnumerable<FileInfo> ProcessSubDirs(DirectoryInfo srcDirInfo, string searchPattern, bool isSrcPath, bool forHistory, int recursionLevel = 0)
+        private static IAsyncEnumerable<FileInfo> ProcessSubDirs(DirectoryInfo srcDirInfo, string searchPattern, bool isSrcPath, bool forHistory, int recursionLevel = 0, Context initialSyncMessageContext = null)
         {
             return new AsyncEnumerable<FileInfo>(async yield => {
+
+#if DEBUG
+                if (initialSyncMessageContext?.IsInitialScan == true)
+                    await ConsoleWatch.AddMessage(ConsoleColor.Gray, "Scanning folder " + Extensions.GetLongPath(srcDirInfo.FullName), initialSyncMessageContext);
+#endif
 
 
                 if (Global.DirlistReadDelayMs > 0)
@@ -1007,7 +1012,7 @@ namespace FolderSync
                     }
 
 
-                    var subDirFileInfos = ProcessSubDirs(dirInfo, searchPattern, isSrcPath, forHistory, recursionLevel + 1);
+                    var subDirFileInfos = ProcessSubDirs(dirInfo, searchPattern, isSrcPath, forHistory, recursionLevel + 1, initialSyncMessageContext: initialSyncMessageContext);
                     await subDirFileInfos.ForEachAsync(async subDirFileInfo => 
                     {
                         await yield.ReturnAsync(subDirFileInfo);
@@ -1608,27 +1613,6 @@ namespace FolderSync
                     var cachedFileInfosDict = Extensions.DeserializeBinary<Dictionary<string, CachedFileInfo>>(cacheDataTuple.Item1);
 
                     //TODO: add parent folders to paths if they were removed
-
-#if false
-                    //backwards compatibility: add slashes to the front of dict keys
-                    cachedFileInfosDict = cachedFileInfosDict
-                        .ToDictionary
-                        (
-                            kvp => {
-                                if (!kvp.Key.StartsWith(DirectorySeparatorChar))
-                                    return DirectorySeparatorChar + kvp.Key;
-                                else
-                                    return kvp.Key;
-                            },
-
-                            kvp => {
-                                if (!kvp.Value.FullName.StartsWith(DirectorySeparatorChar))
-                                    kvp.Value.FullName = DirectorySeparatorChar + kvp.Value.FullName;
-
-                                return kvp.Value;
-                            }
-                        );
-#endif
 
                     return cachedFileInfosDict;
                 }
@@ -2396,7 +2380,7 @@ namespace FolderSync
                             //check for file type only after checking IsWatchedFile first since file type checking might already be a slow operation
                             if (await GetIsFile(context))     //for some reason fse.IsFile is set even for folders
                             { 
-                                await AddMessage(ConsoleColor.Gray, $"[{(fse.IsFile ? "F" : "D")}][T]:{fse.FileSystemInfo.FullName}", context);
+                                await AddMessage(ConsoleColor.Blue, $"[{(fse.IsFile ? "F" : "D")}][T]:{fse.FileSystemInfo.FullName}", context);
 
                                 using (await FileEventLocks.LockAsync(fse.FileSystemInfo.FullName, token))
                                 {

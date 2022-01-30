@@ -107,11 +107,14 @@ namespace FolderSync
                 }
 #endif
 
+                if (i + 1 < retryCount)     //do not sleep after last try
+                { 
 #if !NOASYNC
-                await Task.Delay(1000, token);     //TODO: config file?
+                    await Task.Delay(1000, token);     //TODO: config file?
 #else
-                token.WaitHandle.WaitOne(1000);
+                    token.WaitHandle.WaitOne(1000);
 #endif
+                }
             }
 
             return new T[0];
