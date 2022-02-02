@@ -31,7 +31,9 @@ Ready to use. Maintained and in active use.
 			"FileWriteDelayMs": 0,
 			"WriteBufferKB": 0,
 			"BufferWriteDelayMs": 0,
+
 			"ShowErrorAlerts": true,
+			"LogInitialScan": false,
 
 			"EnableMirror": true,
 			"Bidirectional": false,

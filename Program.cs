@@ -42,7 +42,10 @@ namespace FolderSync
         public static int FileWriteDelayMs = 0;
         public static int WriteBufferKB = 0;
         public static int BufferWriteDelayMs = 0;
+
+
         public static bool ShowErrorAlerts = true;
+        public static bool LogInitialScan = false;
 
 
         public static bool UsePolling = false;
@@ -283,6 +286,7 @@ namespace FolderSync
 
             Global.DirlistReadDelayMs = (int?)fileConfig.GetLong("DirlistReadDelayMs") ?? Global.DirlistReadDelayMs;
             Global.ShowErrorAlerts = fileConfig.GetTextUpper("ShowErrorAlerts") != "FALSE";   //default is true
+            Global.LogInitialScan = fileConfig.GetTextUpper("LogInitialScan") == "TRUE";   //default is false
 
 
             if (!string.IsNullOrWhiteSpace(fileConfig.GetTextUpper("CaseSensitiveFilenames")))   //default is null
@@ -626,10 +630,9 @@ namespace FolderSync
         {
             return new AsyncEnumerable<FileInfo>(async yield => {
 
-#if DEBUG && false
-                if (initialSyncMessageContext?.IsInitialScan == true)
+                
+                if (Global.LogInitialScan && initialSyncMessageContext?.IsInitialScan == true)
                     await ConsoleWatch.AddMessage(ConsoleColor.Blue, "Scanning folder " + Extensions.GetLongPath(srcDirInfo.FullName), initialSyncMessageContext);
-#endif
 
 
                 if (Global.DirlistReadDelayMs > 0)
