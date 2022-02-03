@@ -10,7 +10,13 @@ Ready to use. Maintained and in active use.
 		"Files": {
 			"SrcPath": "C:\\yourpath\\yourproject\\",
 			"SrcPathMinFreeSpace": 0,
+
+			"RetryCountOnEmptyDirlist": 0,
 			"RetryCountOnSrcFileOpenError": 5,
+			"FSOperationTimeout": 3600,
+			"DirListOperationTimeout": 3600,
+			"FileBufferWriteTimeout": 3600,
+			"FileBufferReadTimeout": 3600,
 
 			"MaxFileSizeMB": 2048,
 			"CaseSensitiveFilenames": null,
@@ -24,16 +30,19 @@ Ready to use. Maintained and in active use.
 
 			"UsePolling": false,
 			"PollingDelay": 60,
-			"RetryCountOnEmptyDirlist": 0,
 
 			"UseIdlePriority": false,
 			"DirlistReadDelayMs": 0,
 			"FileWriteDelayMs": 0,
-			"WriteBufferKB": 0,
+			"ReadBufferKB": 1024,
+			"WriteBufferKB": 1024,
+			"BufferReadDelayMs": 0,
 			"BufferWriteDelayMs": 0,
 
 			"ShowErrorAlerts": true,
 			"LogInitialScan": false,
+			"LogToFile": false,
+			"AddTimestampToNormalLogEntries": true,
 
 			"EnableMirror": true,
 			"Bidirectional": false,

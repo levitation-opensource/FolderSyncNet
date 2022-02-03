@@ -25,7 +25,7 @@ namespace FolderSync
             return a.Equals(b);
         }
 
-        public static async Task<Tuple<byte[], long>> ReadAllBytesAsync(string path, CancellationToken cancellationToken = default(CancellationToken), long maxFileSize = 0, int retryCount = 0)
+        public static async Task<Tuple<byte[], long>> ReadAllBytesAsync(string path, CancellationToken cancellationToken = default(CancellationToken), long maxFileSize = 0, int retryCount = 0, int readBufferKB = 0, int bufferReadDelayMs = 0, int? timeout = null, bool suppressLongRunningOperationMessage = false)
         {
             if (path == null)
                 throw new ArgumentNullException(nameof(path));
@@ -34,14 +34,15 @@ namespace FolderSync
 
 
             retryCount = Math.Max(0, retryCount);
-            for (int i = -1; i < retryCount; i++)
+            for (int tryIndex = -1; tryIndex < retryCount; tryIndex++)
             {
                 if (cancellationToken.IsCancellationRequested)
                     return await Task.FromCanceled<Tuple<byte[], long>>(cancellationToken);
 
                 try
                 {
-                    using (var stream = new FileStream(
+                    using (var stream = new FileStream
+                    (
                         path,
                         FileMode.Open,
                         FileAccess.Read,
@@ -50,16 +51,56 @@ namespace FolderSync
                         useAsync: true
                     ))
                     {
-                        long len = stream.Length;    //NB! the length might change during the code execution, so need to save it into separate variable
+                        long longLen = stream.Length;    //NB! the length might change during the code execution, so need to save it into separate variable
 
                         maxFileSize = Math.Min(MaxByteArraySize, maxFileSize);
-                        if (maxFileSize > 0 && len > maxFileSize)
+                        if (maxFileSize > 0 && longLen > maxFileSize)
                         {
-                            return new Tuple<byte[], long>(null, len);
+                            return new Tuple<byte[], long>(null, longLen);
                         }
 
+
+                        int len = (int)longLen;
                         byte[] result = new byte[len];
-                        await stream.ReadAsync(result, 0, (int)len, cancellationToken);
+
+#if false
+                        //await stream.ReadAsync(result, 0, (int)len, cancellationToken);
+                        await Extensions.FSOperation
+                        (
+                            async () => await stream.ReadAsync(result, 0, (int)len, cancellationToken),
+                            path,
+                            cancellationToken,
+                            timeout: timeout ?? Global.FileBufferReadTimeout,
+                            suppressLongRunningOperationMessage: suppressLongRunningOperationMessage
+                        );
+#else
+                        var readBufferLength = readBufferKB * 1024;
+                        if (readBufferLength <= 0/* || bufferReadDelayMs <= 0*/)  //NB! disable write buffer length limit if delay is 0
+                            readBufferLength = len;
+
+                        for (int readOffset = 0; readOffset < len; readOffset += readBufferLength)
+                        {
+                            if (readOffset > 0 && bufferReadDelayMs > 0)
+                            {
+#if !NOASYNC
+                                await Task.Delay(bufferReadDelayMs, cancellationToken);
+#else
+                                cancellationToken.WaitHandle.WaitOne(bufferReadDelayMs);
+#endif
+                            }
+
+                            //await stream.WriteAsync(contents, i, writeBufferLength, cancellationToken);
+                            await Extensions.FSOperation
+                            (
+                                async () => await stream.ReadAsync(result, readOffset, Math.Min(readBufferLength, len - readOffset), cancellationToken),
+                                path,
+                                cancellationToken,
+                                timeout: timeout ?? Global.FileBufferReadTimeout,
+                                suppressLongRunningOperationMessage: suppressLongRunningOperationMessage
+                            );
+                        }   //for (int i = 0; i < contents.Length; i += writeBufferLength)
+#endif
+
                         return new Tuple<byte[], long>(result, len);
                     }
                 }
@@ -70,7 +111,7 @@ namespace FolderSync
                 {
                     //retry after delay
 
-                    if (i + 1 < retryCount)     //do not sleep after last try
+                    if (tryIndex + 1 < retryCount)     //do not sleep after last try
                     {
 #if !NOASYNC
                         await Task.Delay(1000, cancellationToken);     //TODO: config file?
@@ -82,9 +123,10 @@ namespace FolderSync
             }
 
             return new Tuple<byte[], long>(null, -1);
-        }
 
-        public static async Task WriteAllBytesAsync(string path, byte[] contents, bool createTempFileFirst, CancellationToken cancellationToken = default(CancellationToken), int writeBufferKB = 0, int bufferWriteDelayMs = 0)
+        }   //public static async Task<Tuple<byte[], long>> ReadAllBytesAsync()
+
+        public static async Task WriteAllBytesAsync(string path, byte[] contents, bool createTempFileFirst, CancellationToken cancellationToken = default(CancellationToken), int writeBufferKB = 0, int bufferWriteDelayMs = 0, int? timeout = null, bool suppressLongRunningOperationMessage = false)
         {
             if (path == null)
                 throw new ArgumentNullException(nameof(path));
@@ -101,7 +143,8 @@ namespace FolderSync
 
                 try
                 {                    
-                    using (var stream = new FileStream(
+                    using (var stream = new FileStream
+                    (
                         tempPath,
                         FileMode.OpenOrCreate, 
                         FileAccess.Write, 
@@ -111,12 +154,12 @@ namespace FolderSync
                     ))
                     {
                         var writeBufferLength = writeBufferKB * 1024;
-                        if (writeBufferLength <= 0 || bufferWriteDelayMs <= 0)  //NB! disable write buffer length limit if delay is 0
+                        if (writeBufferLength <= 0/* || bufferWriteDelayMs <= 0*/)  //NB! disable write buffer length limit if delay is 0
                             writeBufferLength = contents.Length;
 
-                        for (int i = 0; i < contents.Length; i += writeBufferLength)
+                        for (int writeOffset = 0; writeOffset < contents.Length; writeOffset += writeBufferLength)
                         {
-                            if (i > 0 && bufferWriteDelayMs > 0)
+                            if (writeOffset > 0 && bufferWriteDelayMs > 0)
                             {
 #if !NOASYNC
                                 await Task.Delay(bufferWriteDelayMs, cancellationToken); 
@@ -125,20 +168,49 @@ namespace FolderSync
 #endif
                             }
 
-                            await stream.WriteAsync(contents, i, writeBufferLength, cancellationToken);                            
-                        }
+                            //await stream.WriteAsync(contents, i, writeBufferLength, cancellationToken);
+                            await Extensions.FSOperation
+                            (
+                                async () => await stream.WriteAsync(contents, writeOffset, Math.Min(writeBufferLength, contents.Length - writeOffset), cancellationToken),
+                                tempPath,
+                                cancellationToken,
+                                timeout: timeout ?? Global.FileBufferWriteTimeout,
+                                suppressLongRunningOperationMessage: suppressLongRunningOperationMessage
+                            );
+                        }   //for (int i = 0; i < contents.Length; i += writeBufferLength)
                     }
 
                     if (createTempFileFirst)
                     {
-                        if (await Extensions.FSOperation(() => File.Exists(path), cancellationToken))
+                        if (await Extensions.FSOperation
+                        (
+                            () => File.Exists(path), 
+                            path,
+                            cancellationToken,
+                            timeout: timeout,
+                            suppressLongRunningOperationMessage: suppressLongRunningOperationMessage
+                        ))
                         {
 #pragma warning disable SEC0116 //Warning	SEC0116	Unvalidated file paths are passed to a file delete API, which can allow unauthorized file system operations (e.g. read, write, delete) to be performed on unintended server files.
-                            await Extensions.FSOperation(() => File.Delete(path), cancellationToken);
+                            await Extensions.FSOperation
+                            (
+                                () => File.Delete(path), 
+                                path,
+                                cancellationToken,
+                                timeout: timeout,
+                                suppressLongRunningOperationMessage: suppressLongRunningOperationMessage
+                            );
 #pragma warning restore SEC0116
                         }
 
-                        await Extensions.FSOperation(() => File.Move(tempPath, path), cancellationToken);
+                        await Extensions.FSOperation
+                        (
+                            () => File.Move(tempPath, path),
+                            tempPath + " " + Path.PathSeparator + " " + path,
+                            cancellationToken,
+                            timeout: timeout,
+                            suppressLongRunningOperationMessage: suppressLongRunningOperationMessage
+                        );
                     }
 
 
@@ -155,7 +227,7 @@ namespace FolderSync
 #endif
                 }
             }
-        }
+        }   //public static async Task WriteAllBytesAsync()
 
     }
 }

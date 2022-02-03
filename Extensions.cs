@@ -15,6 +15,7 @@ using System.Runtime.Serialization;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Threading;
 using System.Threading.Tasks;
+using Nito.AspNetBackgroundTasks;
 using Nito.AsyncEx;
 
 namespace FolderSync
@@ -75,26 +76,207 @@ namespace FolderSync
             return dirPath;
         }
 
-        public static async Task FSOperation(Action func, CancellationToken token)
+        public static Task ContinueWithNoException(this Task task)
         {
-            //await Task.Run(func).WaitAsync(token);
-            func();
-        }
+            //https://stackoverflow.com/questions/20509158/taskcanceledexception-when-calling-task-delay-with-a-cancellationtoken-in-an-key/
+            //https://blog.stephencleary.com/2013/10/continuewith-is-dangerous-too.html
+            var result = task.ContinueWith
+            (
+                t => { /*ignore TaskCanceledException*/ }, 
+                CancellationToken.None, 
+                TaskContinuationOptions.ExecuteSynchronously, 
+                TaskScheduler.Default
+            );
 
-        public static async Task<T> FSOperation<T>(Func<T> func, CancellationToken token)
-        {
-            //var result = await Task.Run(func).WaitAsync(token);
-            var result = func();
             return result;
         }
 
-        public static async Task<T[]> DirListOperation<T>(Func<T[]> func, int retryCount, CancellationToken token)
+        private static async Task<bool> RunWithTimeoutHelper(Task task, int timeout, CancellationToken token, CancellationTokenSource childToken, string longRunningOperationMessage = null, bool suppressLogFile = false)
+        {
+            Task messageTask = null;
+            bool longRunningTaskMessageWritten = false;
+            if (!string.IsNullOrWhiteSpace(longRunningOperationMessage))
+            {
+                messageTask = Task.Run
+                (
+                    async () =>
+                    {
+                        await Task.Delay(1000, childToken.Token).ContinueWithNoException();   //TODO: config
+
+                        while (!childToken.IsCancellationRequested)
+                        {
+                            await Program.AddMessage(ConsoleColor.Gray, longRunningOperationMessage, DateTime.Now, token: childToken.Token, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
+                            longRunningTaskMessageWritten = true;   //NB! set this flag only after the message was actually written else the task might be canceled before the console lock is taken
+
+                            if (!childToken.IsCancellationRequested)
+                                await Task.Delay(60 * 1000, childToken.Token).ContinueWithNoException();   //TODO: config
+                        }
+                    },
+                    childToken.Token
+                )
+                .ContinueWithNoException();
+            }
+            
+            if (timeout > 0)
+            {
+                var timeoutTask = Task.Delay(timeout * 1000, childToken.Token).ContinueWithNoException();
+                await Task.WhenAny(task, timeoutTask);
+            }
+            else
+            {
+                await task;
+            }
+
+
+            bool cancellationRequested = childToken.IsCancellationRequested;
+
+            if (!cancellationRequested)
+                childToken.Cancel();    //NB! Cancel timeoutTask if task completes first, or cancel task if timeoutTask completes first. Also cancel messageTask.
+
+            if (messageTask != null)
+            {
+                await messageTask;      //NB! ensure that messageTask is finished before disposing childToken
+
+                if (longRunningTaskMessageWritten && !cancellationRequested)
+                { 
+                    //NB! not using childToken here since it will be already canceled and would raise an exception
+                    await Program.AddMessage(ConsoleColor.Gray, "DONE " + longRunningOperationMessage, DateTime.Now, token: token, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
+                }
+            }
+
+            return cancellationRequested;
+
+        }   //private static async Task<bool> RunWithTimeoutHelper(Task task, int timeout, CancellationToken token, CancellationTokenSource childToken, string longRunningOperationMessage = null, bool suppressLogFile = false)
+
+        public static async Task RunWithTimeout(Action func, int timeout, CancellationToken parentToken, string longRunningOperationMessage = null, bool suppressLogFile = false)
+        {
+            if (timeout <= 0 && string.IsNullOrWhiteSpace(longRunningOperationMessage))
+            {
+                func();
+                return;
+            }
+
+
+            using (var childToken = CancellationTokenSource.CreateLinkedTokenSource(parentToken))
+            {
+                var task = Task.Run(func, childToken.Token);
+
+                bool cancellationRequested = await RunWithTimeoutHelper(task, timeout, parentToken, childToken, longRunningOperationMessage, suppressLogFile);
+
+                if (task.IsCompleted)
+                {
+                    await task;     //raise any exceptions from the task
+                    return;
+                }
+                else if (task.IsCanceled || cancellationRequested)
+                    throw new TaskCanceledException(task);
+                else
+                    throw new TimeoutException("Timed out");
+            }
+
+        }   //public static async Task RunWithTimeout(Action func, int timeout, CancellationToken parentToken)
+
+        public static async Task<T> RunWithTimeout<T>(Func<T> func, int timeout, CancellationToken parentToken, string longRunningOperationMessage = null, bool suppressLogFile = false)
+        {
+            if (timeout <= 0 && string.IsNullOrWhiteSpace(longRunningOperationMessage))
+            {
+                var result = func();
+                return result;
+            }
+
+
+            using (var childToken = CancellationTokenSource.CreateLinkedTokenSource(parentToken))
+            {
+                var task = Task.Run(func, childToken.Token);
+
+                bool cancellationRequested = await RunWithTimeoutHelper(task, timeout, parentToken, childToken, longRunningOperationMessage, suppressLogFile);
+
+                if (task.IsCompleted)
+                {
+                    var result = await task;     //raise any exceptions from the task
+                    return result;
+                }
+                else if (task.IsCanceled || cancellationRequested)
+                    throw new TaskCanceledException(task);
+                else
+                    throw new TimeoutException("Timed out");
+            }
+
+        }   //public static async Task<T> RunWithTimeout<T>(Func<T> func, int timeout, CancellationToken parentToken)
+
+        public static async Task FSOperation(Action func, string path, CancellationToken token, int? timeout = null, bool suppressLogFile = false, bool suppressLongRunningOperationMessage = false)
+        {
+            //await Task.Run(func).WaitAsync(token);
+            //func();
+            try
+            {
+                await RunWithTimeout
+                (
+                    func, 
+                    timeout ?? Global.FSOperationTimeout, 
+                    token,
+                    !suppressLongRunningOperationMessage ? "Running filesystem operation on " + path : null, 
+                    suppressLogFile
+                );
+            }
+            catch (TimeoutException ex)
+            {
+                //Console.WriteLine("Timed out filesystem operation on " + path);
+                //throw;
+                throw new AggregateException("Timed out filesystem operation on " + path, ex);
+            }
+        }
+
+        public static async Task<T> FSOperation<T>(Func<T> func, string path, CancellationToken token, int? timeout = null, bool suppressLogFile = false, bool suppressLongRunningOperationMessage = false)
+        {
+            //var result = await Task.Run(func).WaitAsync(token);
+            //var result = func();
+            //return result;
+            try
+            {
+                var result = await RunWithTimeout
+                (
+                    func, 
+                    timeout ?? Global.FSOperationTimeout, 
+                    token,
+                    !suppressLongRunningOperationMessage ? "Running filesystem operation on " + path : null,
+                    suppressLogFile
+                );
+                return result;
+            }
+            catch (TimeoutException ex)
+            {
+                //Console.WriteLine("Timed out filesystem operation on " + path);
+                //throw;
+                throw new AggregateException("Timed out filesystem operation on " + path, ex);
+            }
+        }
+
+        public static async Task<T[]> DirListOperation<T>(Func<T[]> func, string path, int retryCount, CancellationToken token, int? timeout = null, bool suppressLongRunningOperationMessage = false)
         {
             retryCount = Math.Max(0, retryCount);
-            for (int i = -1; i < retryCount; i++)
-            { 
+            for (int tryIndex = -1; tryIndex < retryCount; tryIndex++)
+            {
                 //T result = await Task.Run(func).WaitAsync(token);
-                var result = func();
+                //var result = func();
+                T[] result;
+                try
+                {
+                    result = await RunWithTimeout
+                    (
+                        func, 
+                        timeout ?? Global.DirListOperationTimeout, 
+                        token,
+                        !suppressLongRunningOperationMessage ? "Running dirlist operation on " + path : null
+                    );
+                }
+                catch (TimeoutException ex)
+                {
+                    //Console.WriteLine("Timed out dirlist operation on " + path);
+                    //throw;
+                    throw new AggregateException("Timed out dirlist operation on " + path, ex);
+                }
+
 
                 if (result.Length > 0)
                     return result;
@@ -106,7 +288,7 @@ namespace FolderSync
                 }
 #endif
 
-                if (i + 1 < retryCount)     //do not sleep after last try
+                if (tryIndex + 1 < retryCount)     //do not sleep after last try
                 {
 #if !NOASYNC
                     await Task.Delay(1000, token);     //TODO: config file?
@@ -117,7 +299,8 @@ namespace FolderSync
             }
 
             return new T[0];
-        }
+
+        }   //public static async Task<T[]> DirListOperation<T>(Func<T[]> func, string path, int retryCount, CancellationToken token)
 
         public static byte[] SerializeBinary<T>(this T obj, bool compress = true)
         {

@@ -40,12 +40,16 @@ namespace FolderSync
         public static bool UseIdlePriority = false;
         public static int DirlistReadDelayMs = 0;
         public static int FileWriteDelayMs = 0;
-        public static int WriteBufferKB = 0;
+        public static int ReadBufferKB = 1024;
+        public static int WriteBufferKB = 1024;
+        public static int BufferReadDelayMs = 0;
         public static int BufferWriteDelayMs = 0;
 
 
         public static bool ShowErrorAlerts = true;
         public static bool LogInitialScan = false;
+        public static bool LogToFile = false;
+        public static bool AddTimestampToNormalLogEntries = true;
 
 
         public static bool UsePolling = false;
@@ -54,6 +58,10 @@ namespace FolderSync
         
         public static int RetryCountOnEmptyDirlist = 0;
         public static int RetryCountOnSrcFileOpenError = 5;
+        public static int FSOperationTimeout = 3600; //60 * 15;
+        public static int DirListOperationTimeout = 3600; //60 * 15;
+        public static int FileBufferWriteTimeout = 3600; //60 * 15;
+        public static int FileBufferReadTimeout = 3600; //60 * 15;
 
 
         public static string SrcPath = "";
@@ -263,11 +271,18 @@ namespace FolderSync
 
             Global.RetryCountOnEmptyDirlist = (int?)fileConfig.GetLong("RetryCountOnEmptyDirlist") ?? Global.RetryCountOnEmptyDirlist;
             Global.RetryCountOnSrcFileOpenError = (int?)fileConfig.GetLong("RetryCountOnSrcFileOpenError") ?? Global.RetryCountOnSrcFileOpenError;
+            Global.FSOperationTimeout = (int?)fileConfig.GetLong("FSOperationTimeout") ?? Global.FSOperationTimeout;
+            Global.DirListOperationTimeout = (int?)fileConfig.GetLong("DirListOperationTimeout") ?? Global.DirListOperationTimeout;
+            Global.FileBufferWriteTimeout = (int?)fileConfig.GetLong("FileWriteTimeout") ?? Global.FileBufferWriteTimeout;
+            Global.FileBufferReadTimeout = (int?)fileConfig.GetLong("FileReadTimeout") ?? Global.FileBufferReadTimeout;
 
 
             Global.UseIdlePriority = fileConfig.GetTextUpper("UseIdlePriority") == "TRUE";   //default is false
+            Global.DirlistReadDelayMs = (int?)fileConfig.GetLong("DirlistReadDelayMs") ?? Global.DirlistReadDelayMs;
             Global.FileWriteDelayMs = (int?)fileConfig.GetLong("FileWriteDelayMs") ?? Global.FileWriteDelayMs;
+            Global.ReadBufferKB = (int?)fileConfig.GetLong("ReadBufferKB") ?? Global.ReadBufferKB;
             Global.WriteBufferKB = (int?)fileConfig.GetLong("WriteBufferKB") ?? Global.WriteBufferKB;
+            Global.BufferReadDelayMs = (int?)fileConfig.GetLong("BufferReadDelayMs") ?? Global.BufferReadDelayMs;
             Global.BufferWriteDelayMs = (int?)fileConfig.GetLong("BufferWriteDelayMs") ?? Global.BufferWriteDelayMs;
 
 
@@ -283,10 +298,12 @@ namespace FolderSync
             Global.CachePath = Extensions.GetDirPathWithTrailingSlash(fileConfig.GetTextUpperOnWindows(Global.CaseSensitiveFilenames, "CachePath"));
             if (string.IsNullOrWhiteSpace(Global.CachePath))
                 Global.CachePath = Extensions.GetDirPathWithTrailingSlash(Path.Combine(".", "cache")).ToUpperInvariantOnWindows(Global.CaseSensitiveFilenames);
+            
 
-            Global.DirlistReadDelayMs = (int?)fileConfig.GetLong("DirlistReadDelayMs") ?? Global.DirlistReadDelayMs;
             Global.ShowErrorAlerts = fileConfig.GetTextUpper("ShowErrorAlerts") != "FALSE";   //default is true
             Global.LogInitialScan = fileConfig.GetTextUpper("LogInitialScan") == "TRUE";   //default is false
+            Global.LogToFile = fileConfig.GetTextUpper("LogToFile") == "TRUE";   //default is false
+            Global.AddTimestampToNormalLogEntries = fileConfig.GetTextUpper("AddTimestampToNormalLogEntries") != "FALSE";   //default is true
 
 
             if (!string.IsNullOrWhiteSpace(fileConfig.GetTextUpper("CaseSensitiveFilenames")))   //default is null
@@ -409,7 +426,7 @@ namespace FolderSync
                 }
 
 
-                ThreadPool.SetMaxThreads(24, 24);   //TODO: config
+                ThreadPool.SetMaxThreads(40, 40);   //TODO: config
 
 
                 //start the monitor.
@@ -694,11 +711,17 @@ namespace FolderSync
 
                                         var destDirInfo = new DirectoryInfo(destDirName);
 
-                                        if (await Extensions.FSOperation(() => Directory.Exists(destDirName), Global.CancellationToken.Token))
+                                        if (await Extensions.FSOperation
+                                        (
+                                            () => Directory.Exists(destDirName),
+                                            destDirName,
+                                            Global.CancellationToken.Token
+                                        ))
                                         { 
                                             destFileInfos = (await Extensions.DirListOperation
                                             (
                                                 () => destDirInfo.GetFiles(searchPattern, SearchOption.TopDirectoryOnly),
+                                                destDirInfo.FullName,
                                                 Global.RetryCountOnEmptyDirlist,
                                                 Global.CancellationToken.Token
                                             ))
@@ -779,11 +802,17 @@ namespace FolderSync
 
                                         var historyDirInfo = new DirectoryInfo(historyDirName);
 
-                                        if (await Extensions.FSOperation(() => Directory.Exists(historyDirName), Global.CancellationToken.Token))
+                                        if (await Extensions.FSOperation
+                                        (
+                                            () => Directory.Exists(historyDirName),
+                                            historyDirName,
+                                            Global.CancellationToken.Token
+                                        ))
                                         {
                                             historyFileInfos = (await Extensions.DirListOperation
                                             (
                                                 () => historyDirInfo.GetFiles(searchPattern, SearchOption.TopDirectoryOnly),
+                                                historyDirInfo.FullName,
                                                 Global.RetryCountOnEmptyDirlist,
                                                 Global.CancellationToken.Token
                                             ))
@@ -856,6 +885,7 @@ namespace FolderSync
                             fileInfos = await Extensions.DirListOperation
                             (
                                 () => srcDirInfo.GetFiles(searchPattern, SearchOption.TopDirectoryOnly),
+                                srcDirInfo.FullName,
                                 Global.RetryCountOnEmptyDirlist,
                                 Global.CancellationToken.Token
                             );
@@ -877,6 +907,7 @@ namespace FolderSync
                             dirInfos = await Extensions.DirListOperation
                             (
                                 () => srcDirInfo.GetDirectories("*", SearchOption.TopDirectoryOnly),
+                                srcDirInfo.FullName,
                                 Global.RetryCountOnEmptyDirlist,
                                 Global.CancellationToken.Token
                             );
@@ -1074,8 +1105,19 @@ namespace FolderSync
 
             message.AppendLine("");
 
-            await FileExtensions.AppendAllTextAsync("UnhandledExceptions.log", message.ToString(), Global.CancellationToken.Token);
 
+            using (await ConsoleWatch.Lock.LockAsync(Global.CancellationToken.Token))
+            {
+                await FileExtensions.AppendAllTextAsync
+                (
+                    "UnhandledExceptions.log", 
+                    message.ToString(), 
+                    Global.CancellationToken.Token, 
+                    suppressLogFile: true,
+                    timeout: 0,     //NB!
+                    suppressLongRunningOperationMessage: true     //NB!
+                );
+            }
 
 
             //Console.WriteLine(ex.Message);
@@ -1091,17 +1133,37 @@ namespace FolderSync
 
 
             var time = DateTime.Now;
-            var msg = $"[{time:yyyy.MM.dd HH:mm:ss.ffff}]:{message}";
-            await AddMessage(ConsoleColor.Red, msg, time, showAlert: true);
-        }
+            var msg = message.ToString();
+            await AddMessage(ConsoleColor.Red, msg, time, showAlert: true, addTimestamp: true);
 
-        private static async Task AddMessage(ConsoleColor color, string message, DateTime time, bool showAlert = false)
+        }   //private static async Task WriteException(Exception ex_in)
+
+        internal static async Task AddMessage(ConsoleColor color, string message, DateTime time, bool showAlert = false, bool addTimestamp = false, CancellationToken? token = null, bool suppressLogFile = false)
         {
+            if (addTimestamp || Global.AddTimestampToNormalLogEntries)
+            { 
+                message = $"[{time:yyyy.MM.dd HH:mm:ss.ffff}] : {message}";
+            }
+
+
             //await Task.Run(() => 
             {
-                //NB! using synchronous lock here since the MessageBox.Show and Console.WriteLine are synchronous
-                lock (ConsoleWatch.Lock)
+                using (await ConsoleWatch.Lock.LockAsync(token ?? Global.CancellationToken.Token))
                 {
+                    if (Global.LogToFile && !suppressLogFile)
+                    { 
+                        await FileExtensions.AppendAllTextAsync
+                        (
+                            "Console.log", 
+                            message, 
+                            token ?? Global.CancellationToken.Token, 
+                            suppressLogFile: true,
+                            timeout: 0,     //NB!
+                            suppressLongRunningOperationMessage: true     //NB!
+                        );
+                    }
+
+
                     try
                     {
                         Console.ForegroundColor = color;
@@ -1214,7 +1276,7 @@ namespace FolderSync
         /// <summary>
         /// We need a static lock so it is shared by all.
         /// </summary>
-        internal static readonly object Lock = new object();
+        internal static readonly AsyncLock Lock = new AsyncLock();
 
         internal static DateTime PrevAlertTime;
         internal static string PrevAlertMessage;
@@ -1301,8 +1363,19 @@ namespace FolderSync
 
             message.AppendLine("");
 
-            await FileExtensions.AppendAllTextAsync("UnhandledExceptions.log", message.ToString(), context.Token);
 
+            using (await ConsoleWatch.Lock.LockAsync(context.Token))
+            { 
+                await FileExtensions.AppendAllTextAsync
+                (
+                    "UnhandledExceptions.log", 
+                    message.ToString(), 
+                    context.Token, 
+                    suppressLogFile: true,
+                    timeout: 0,     //NB!
+                    suppressLongRunningOperationMessage: true     //NB!
+                );
+            }
 
 
             //Console.WriteLine(ex.Message);
@@ -1317,8 +1390,8 @@ namespace FolderSync
             }
 
 
-            var msg = $"[{context.Time.ToLocalTime():yyyy.MM.dd HH:mm:ss.ffff}] : {context.Event?.FullName} : {message}";
-            await AddMessage(ConsoleColor.Red, msg, context, showAlert: true);
+            var msg = $"{context.Event?.FullName} : {message}";
+            await AddMessage(ConsoleColor.Red, msg, context, showAlert: true, addTimestamp: true);
         }
 
         public static bool IsSrcPath(string fullNameInvariant)
@@ -1557,14 +1630,24 @@ namespace FolderSync
                         if (await GetFileExists(backupFileInfo, otherFullName + "~", isSrcFile: !context.IsSrcPath, forHistory: context.ForHistory))
                         {
 #pragma warning disable SEC0116 //Warning	SEC0116	Unvalidated file paths are passed to a file delete API, which can allow unauthorized file system operations (e.g. read, write, delete) to be performed on unintended server files.
-                            await Extensions.FSOperation(() => File.Delete(otherFullName + "~"), context.Token);
+                            await Extensions.FSOperation
+                            (
+                                () => File.Delete(otherFullName + "~"),
+                                otherFullName + "~",
+                                context.Token
+                            );
 #pragma warning restore SEC0116
                         }
 
                         //fileInfo?.Refresh();
                         if (await GetFileExists(otherFileInfo, otherFullName, isSrcFile: !context.IsSrcPath, forHistory: context.ForHistory))
                         {
-                            await Extensions.FSOperation(() => File.Move(otherFullName, otherFullName + "~"), context.Token);
+                            await Extensions.FSOperation
+                            (
+                                () => File.Move(otherFullName, otherFullName + "~"),
+                                otherFullName + " " + Path.PathSeparator + " " + otherFullName + "~",
+                                context.Token
+                            );
                         }
 
                         return;
@@ -1605,8 +1688,23 @@ namespace FolderSync
                 var cacheDirName = Extensions.GetLongPath(GetCacheDirName(dirName, forHistory));
                 var cacheFileName = Path.Combine(cacheDirName, "dircache.dat");
 
-                if (await Extensions.FSOperation(() => File.Exists(cacheFileName), Global.CancellationToken.Token))
-                    cacheDataTuple = await FileExtensions.ReadAllBytesAsync(cacheFileName, Global.CancellationToken.Token);
+                if (await Extensions.FSOperation
+                (
+                    () => File.Exists(cacheFileName),
+                    cacheFileName,
+                    Global.CancellationToken.Token,
+                    timeout: 0,     //NB!
+                    suppressLongRunningOperationMessage: true     //NB!
+                ))
+                { 
+                    cacheDataTuple = await FileExtensions.ReadAllBytesAsync
+                    (
+                        cacheFileName, 
+                        Global.CancellationToken.Token,
+                        timeout: 0,     //NB!
+                        suppressLongRunningOperationMessage: true     //NB!
+                    );
+                }
 
             }   //if (Global.PersistentCacheDestAndHistoryFolders)
 
@@ -1641,13 +1739,37 @@ namespace FolderSync
                     var cacheDirName = Extensions.GetLongPath(ConsoleWatch.GetCacheDirName(dirName, forHistory));
                     var cacheFileName = Path.Combine(cacheDirName, "dircache.dat");
 
-                    if (!await Extensions.FSOperation(() => Directory.Exists(cacheDirName), Global.CancellationToken.Token))
-                        await Extensions.FSOperation(() => Directory.CreateDirectory(cacheDirName), Global.CancellationToken.Token);
+                    if (!await Extensions.FSOperation
+                    (
+                        () => Directory.Exists(cacheDirName),
+                        cacheDirName,
+                        Global.CancellationToken.Token,
+                        timeout: 0,     //NB!
+                        suppressLongRunningOperationMessage: true     //NB!
+                    ))
+                    { 
+                        await Extensions.FSOperation
+                        (
+                            () => Directory.CreateDirectory(cacheDirName),
+                            cacheDirName,
+                            Global.CancellationToken.Token,
+                            timeout: 0,     //NB!
+                            suppressLongRunningOperationMessage: true     //NB!
+                        );
+                    }
 
                     //TODO: remove parent folders from paths
 
                     var serialisedData = Extensions.SerializeBinary(dirCache);
-                    await FileExtensions.WriteAllBytesAsync(cacheFileName, serialisedData, createTempFileFirst: true, cancellationToken: Global.CancellationToken.Token);
+                    await FileExtensions.WriteAllBytesAsync
+                    (
+                        cacheFileName, 
+                        serialisedData, 
+                        createTempFileFirst: true, 
+                        cancellationToken: Global.CancellationToken.Token,
+                        timeout: 0,     //NB!
+                        suppressLongRunningOperationMessage: true     //NB!
+                    );
                 //});
             }
         }
@@ -1673,6 +1795,7 @@ namespace FolderSync
                             var dymmyTime = fileInfo.LastWriteTimeUtc;
                         }
                     },
+                    fileInfo.FullName,
                     context.Token
                 );
 
@@ -1848,7 +1971,16 @@ namespace FolderSync
                         Tuple<byte[], long> fileDataTuple = null;
                         try
                         { 
-                            fileDataTuple = await FileExtensions.ReadAllBytesAsync(Extensions.GetLongPath(context.Event.FullName), context.Token, maxFileSize, retryCount: Global.RetryCountOnSrcFileOpenError);
+                            fileDataTuple = await FileExtensions.ReadAllBytesAsync
+                            (
+                                Extensions.GetLongPath(context.Event.FullName), 
+                                context.Token, 
+                                maxFileSize, 
+                                retryCount: Global.RetryCountOnSrcFileOpenError,
+                                readBufferKB: Global.ReadBufferKB,
+                                bufferReadDelayMs: Global.BufferReadDelayMs
+                            );
+
                             if (fileDataTuple.Item1 == null)   //maximum length exceeded
                             {
                                 if (fileDataTuple.Item2 >= 0)
@@ -1932,6 +2064,7 @@ namespace FolderSync
 
                     return fileInfo1;
                 },
+                fullName,
                 token
             );
 
@@ -2031,10 +2164,12 @@ namespace FolderSync
             {
                 context.FileInfo = await GetFileInfo(context);
             }
+#if false
             else
             {
                 await RefreshFileInfo(context);
             }
+#endif
 
             if (!await GetFileExists(context))
             {
@@ -2320,7 +2455,7 @@ namespace FolderSync
                     await WriteException(ex, context);
                 }
             }
-        }
+        }   //internal static async Task OnRemovedAsync(IFileSystemEvent fse, CancellationToken token)
 
         internal static async Task OnAddedAsync(IFileSystemEvent fse, CancellationToken token, bool isInitialScan)
         {
@@ -2362,7 +2497,7 @@ namespace FolderSync
                     await WriteException(ex, context);
                 }
             }
-        }
+        }   //internal static async Task OnAddedAsync(IFileSystemEvent fse, CancellationToken token, bool isInitialScan)
 
         internal static async Task OnTouchedAsync(IFileSystemEvent fse, CancellationToken token)
         {
@@ -2407,15 +2542,35 @@ namespace FolderSync
                     await WriteException(ex, context);
                 }
             }
-        }
+        }   //internal static async Task OnTouchedAsync(IFileSystemEvent fse, CancellationToken token)
 
-        public static async Task AddMessage(ConsoleColor color, string message, Context context, bool showAlert = false)
+        public static async Task AddMessage(ConsoleColor color, string message, Context context, bool showAlert = false, bool addTimestamp = false)
         {
+            if (addTimestamp || Global.AddTimestampToNormalLogEntries)
+            {
+                var time = context.Time.ToLocalTime();
+                message = $"[{time:yyyy.MM.dd HH:mm:ss.ffff}] : {message}";
+            }
+
+
             //await Task.Run(() =>
             {
-                //NB! using synchronous lock here since the MessageBox.Show and Console.WriteLine are synchronous
-                lock (Lock)
+                using (await ConsoleWatch.Lock.LockAsync(context.Token))
                 {
+                    if (Global.LogToFile)
+                    { 
+                        await FileExtensions.AppendAllTextAsync
+                        (
+                            "Console.log", 
+                            message, 
+                            context.Token, 
+                            suppressLogFile: true,
+                            timeout: 0,     //NB!
+                            suppressLongRunningOperationMessage: true     //NB! 
+                        );
+                    }
+
+                    
                     try
                     {
                         Console.ForegroundColor = color;
@@ -2445,7 +2600,8 @@ namespace FolderSync
                 }
             }//)
             //.WaitAsync(context.Token);
-        }
+
+        }   //public static async Task AddMessage(ConsoleColor color, string message, Context context, bool showAlert = false, bool addTimestamp = false)
 
         public static async Task SaveFileModifications(byte[] fileData, Context context)
         {
@@ -2455,11 +2611,20 @@ namespace FolderSync
             var otherFileInfoRef = new FileInfoRef(context.OtherFileInfo, context.Token);
             var longOtherFullName = Extensions.GetLongPath(otherFullName);
 
+            long maxFileSize = Math.Min(FileExtensions.MaxByteArraySize, Global.MaxFileSizeMB * (1024 * 1024));
+
             //NB! detect whether the file actually changed
             var otherFileDataTuple = 
                 !Global.DoNotCompareFileContent 
                     && (await GetFileExists(otherFileInfoRef, otherFullName, isSrcFile: !context.IsSrcPath, forHistory: context.ForHistory))
-                ? await FileExtensions.ReadAllBytesAsync(longOtherFullName, context.Token)    //TODO: optimisation: no need to read the bytes in case the file lengths are different
+                ? await FileExtensions.ReadAllBytesAsync    //TODO: optimisation: no need to read the bytes in case the file lengths are different
+                        (
+                            longOtherFullName, 
+                            context.Token,
+                            maxFileSize,
+                            readBufferKB: Global.ReadBufferKB,
+                            bufferReadDelayMs: Global.BufferReadDelayMs
+                        )
                 : null;
 
             context.OtherFileInfo = otherFileInfoRef.Value;
@@ -2500,7 +2665,12 @@ namespace FolderSync
                     || !Global.CreatedFoldersCache.ContainsKey(longOtherDirName)
                 )
                 { 
-                    if (!await Extensions.FSOperation(() => Directory.Exists(longOtherDirName), context.Token))
+                    if (!await Extensions.FSOperation
+                    (
+                        () => Directory.Exists(longOtherDirName),
+                        longOtherDirName,
+                        context.Token
+                    ))
                     {
                         newFolderCreated = true;
 
@@ -2526,7 +2696,12 @@ namespace FolderSync
                             }
                         }
 
-                        await Extensions.FSOperation(() => Directory.CreateDirectory(longOtherDirName), context.Token);
+                        await Extensions.FSOperation
+                        (
+                            () => Directory.CreateDirectory(longOtherDirName),
+                            longOtherDirName,
+                            context.Token
+                        );
 
                     }   //if (!await Extensions.FSOperation(() => Directory.Exists(longOtherDirName), context.Token))
 
@@ -2542,7 +2717,15 @@ namespace FolderSync
 
                 var utcNowBeforeSave = DateTime.UtcNow;
                 bool createTempFileFirst = !context.ForHistory && context.OtherFileInfo.Exists != false;
-                await FileExtensions.WriteAllBytesAsync(longOtherFullName, fileData, createTempFileFirst: createTempFileFirst, cancellationToken: context.Token, writeBufferKB: Global.WriteBufferKB, bufferWriteDelayMs: Global.BufferWriteDelayMs);
+                await FileExtensions.WriteAllBytesAsync
+                (
+                    longOtherFullName, 
+                    fileData, 
+                    createTempFileFirst: createTempFileFirst, 
+                    cancellationToken: context.Token, 
+                    writeBufferKB: Global.WriteBufferKB, 
+                    bufferWriteDelayMs: Global.BufferWriteDelayMs
+                );
 
 
                 if (Global.BidirectionalMirror && !context.ForHistory)
@@ -2618,7 +2801,12 @@ namespace FolderSync
 
                 try
                 {
-                    await Extensions.FSOperation(() => File.SetLastWriteTimeUtc(Extensions.GetLongPath(otherFullName), now), context.Token);
+                    await Extensions.FSOperation
+                    (
+                        () => File.SetLastWriteTimeUtc(longOtherFullName, now),
+                        longOtherFullName,
+                        context.Token
+                    );
                 }
                 catch (Exception ex)
                 {
