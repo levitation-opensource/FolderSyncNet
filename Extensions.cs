@@ -82,7 +82,7 @@ namespace FolderSync
             //https://blog.stephencleary.com/2013/10/continuewith-is-dangerous-too.html
             var result = task.ContinueWith
             (
-                t => { /*ignore TaskCanceledException*/ }, 
+                t => { }, //ignore TaskCanceledException
                 CancellationToken.None, 
                 TaskContinuationOptions.ExecuteSynchronously, 
                 TaskScheduler.Default
@@ -91,60 +91,115 @@ namespace FolderSync
             return result;
         }
 
-        private static async Task<bool> RunWithTimeoutHelper(Task task, int timeout, CancellationToken token, CancellationTokenSource childToken, string longRunningOperationMessage = null, bool suppressLogFile = false)
+        //on .NET 6 we could use .WaitAsync(new TimeSpan(timeout * 1000), childToken.Token) instead of creating a separate Task.Delay task.
+        //https://github.com/dotnet/runtime/blob/933988c35c172068652162adf6f20477231f815e/src/libraries/Common/tests/System/Threading/Tasks/TaskTimeoutExtensions.cs
+        //see also https://devblogs.microsoft.com/pfxteam/crafting-a-task-timeoutafter-method/
+        public static async Task WaitAsync(this Task task, int timeout, CancellationToken cancellationToken)
         {
-            Task messageTask = null;
-            bool longRunningTaskMessageWritten = false;
-            if (!string.IsNullOrWhiteSpace(longRunningOperationMessage))
-            {
-                messageTask = Task.Run
+            var tcs = new TaskCompletionSource<bool>();
+
+            using (new Timer
+            (
+                state => ((TaskCompletionSource<bool>)state).TrySetException(new TimeoutException()), 
+                tcs, 
+                dueTime: timeout, 
+                period: Timeout.Infinite
+            ))
+            { 
+                using (cancellationToken.Register
                 (
-                    async () =>
-                    {
-                        await Task.Delay(1000, childToken.Token).ContinueWithNoException();   //TODO: config
-
-                        while (!childToken.IsCancellationRequested)
-                        {
-                            await Program.AddMessage(ConsoleColor.Gray, longRunningOperationMessage, DateTime.Now, token: childToken.Token, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
-                            longRunningTaskMessageWritten = true;   //NB! set this flag only after the message was actually written else the task might be canceled before the console lock is taken
-
-                            if (!childToken.IsCancellationRequested)
-                                await Task.Delay(60 * 1000, childToken.Token).ContinueWithNoException();   //TODO: config
-                        }
-                    },
-                    childToken.Token
-                )
-                .ContinueWithNoException();
-            }
-            
-            if (timeout > 0)
-            {
-                var timeoutTask = Task.Delay(timeout * 1000, childToken.Token).ContinueWithNoException();
-                await Task.WhenAny(task, timeoutTask);
-            }
-            else
-            {
-                await task;
-            }
-
-
-            bool cancellationRequested = childToken.IsCancellationRequested;
-
-            if (!cancellationRequested)
-                childToken.Cancel();    //NB! Cancel timeoutTask if task completes first, or cancel task if timeoutTask completes first. Also cancel messageTask.
-
-            if (messageTask != null)
-            {
-                await messageTask;      //NB! ensure that messageTask is finished before disposing childToken
-
-                if (longRunningTaskMessageWritten && !cancellationRequested)
-                { 
-                    //NB! not using childToken here since it will be already canceled and would raise an exception
-                    await Program.AddMessage(ConsoleColor.Gray, "DONE " + longRunningOperationMessage, DateTime.Now, token: token, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
+                    state => ((TaskCompletionSource<bool>)state).TrySetCanceled(), 
+                    tcs
+                ))
+                {
+                    await Task.WhenAny(task, tcs.Task);
                 }
             }
+        }
 
-            return cancellationRequested;
+        private static async Task WriteLongRunningOperationMessage(BoolRef longRunningTaskMessageWrittenRef, AsyncLock longRunningOperationMessageLock, CancellationTokenSource childToken, string longRunningOperationMessage, bool suppressLogFile)
+        {
+            if (!childToken.IsCancellationRequested)
+            {
+                using (await longRunningOperationMessageLock.LockAsync(/*childToken.Token*/))
+                {
+                    await Program.AddMessage(ConsoleColor.Gray, longRunningOperationMessage, DateTime.Now, token: childToken.Token, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
+                    longRunningTaskMessageWrittenRef.Value = true;   //NB! set this flag only after the message was actually written else the task might be canceled before the console lock is taken
+                }
+            }
+        }
+
+        private static async Task RunWithTimeoutHelper(Task task, int timeout, CancellationToken token, CancellationTokenSource childToken, string longRunningOperationMessage = null, bool suppressLogFile = false)
+        {
+            bool hasLongRunningOperationMessage = !string.IsNullOrWhiteSpace(longRunningOperationMessage);
+            var longRunningOperationMessageLock = new AsyncLock();
+            var longRunningTaskMessageWrittenRef = new BoolRef();
+            using 
+            (
+                hasLongRunningOperationMessage
+                ? new Timer
+                (
+                    async state => {
+#if true
+                        await WriteLongRunningOperationMessage
+                        (
+                            longRunningTaskMessageWrittenRef, 
+                            longRunningOperationMessageLock, 
+                            childToken, 
+                            longRunningOperationMessage, 
+                            suppressLogFile
+                        )
+                        .ContinueWithNoException();
+#else
+                        if (!childToken.IsCancellationRequested)
+                        { 
+                            using (await longRunningOperationMessageLock.LockAsync(/*childToken.Token*/))   
+                            {
+                                await Program.AddMessage(ConsoleColor.Gray, longRunningOperationMessage, DateTime.Now, token: childToken.Token, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
+                                longRunningTaskMessageWritten = true;   //NB! set this flag only after the message was actually written else the task might be canceled before the console lock is taken
+                            }
+                        }
+#endif
+                    },
+                    null,
+                    dueTime: 1000,           //TODO: config
+                    period: 60 * 1000       //TODO: config
+                ) 
+                : null
+            )
+            {
+                if (timeout > 0)
+                {
+                    await task.WaitAsync(timeout * 1000, token);
+                }
+                else
+                {
+                    await task;
+                }
+
+
+                if (!token.IsCancellationRequested/* && !task.IsCompleted*/)
+                {
+                    //cancel task and longRunningOperationMessage lock wait. Else the timer callback may run after the timer is disposed
+                    //"Note that callbacks can occur after the Dispose() method overload has been called, because the timer queues callbacks for execution by thread pool threads."
+                    //https://msdn.microsoft.com/en-us/library/system.threading.timer.aspx#Remarks
+                    childToken.Cancel();    
+                }
+
+            }   //using (new Timer
+
+            if (hasLongRunningOperationMessage)
+            { 
+                //do not enter the if (longRunningTaskMessageWritten) check before the longRunningOperationMessageLock is free
+                using (await longRunningOperationMessageLock.LockAsync())
+                {
+                    if (longRunningTaskMessageWrittenRef.Value && task.IsCompleted && !task.IsCanceled)
+                    { 
+                        //NB! not using childToken here since it will be already canceled and would raise an exception
+                        await Program.AddMessage(ConsoleColor.Gray, "DONE " + longRunningOperationMessage, DateTime.Now, token: token, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
+                    }
+                }
+            }
 
         }   //private static async Task<bool> RunWithTimeoutHelper(Task task, int timeout, CancellationToken token, CancellationTokenSource childToken, string longRunningOperationMessage = null, bool suppressLogFile = false)
 
@@ -161,14 +216,14 @@ namespace FolderSync
             {
                 var task = Task.Run(func, childToken.Token);
 
-                bool cancellationRequested = await RunWithTimeoutHelper(task, timeout, parentToken, childToken, longRunningOperationMessage, suppressLogFile);
+                await RunWithTimeoutHelper(task, timeout, parentToken, childToken, longRunningOperationMessage, suppressLogFile);
 
-                if (task.IsCompleted)
+                if (task.IsCompleted && !task.IsCanceled)
                 {
                     await task;     //raise any exceptions from the task
                     return;
                 }
-                else if (task.IsCanceled || cancellationRequested)
+                else if (parentToken.IsCancellationRequested)
                     throw new TaskCanceledException(task);
                 else
                     throw new TimeoutException("Timed out");
@@ -189,14 +244,14 @@ namespace FolderSync
             {
                 var task = Task.Run(func, childToken.Token);
 
-                bool cancellationRequested = await RunWithTimeoutHelper(task, timeout, parentToken, childToken, longRunningOperationMessage, suppressLogFile);
+                await RunWithTimeoutHelper(task, timeout, parentToken, childToken, longRunningOperationMessage, suppressLogFile);
 
-                if (task.IsCompleted)
+                if (task.IsCompleted && !task.IsCanceled)
                 {
                     var result = await task;     //raise any exceptions from the task
                     return result;
                 }
-                else if (task.IsCanceled || cancellationRequested)
+                else if (parentToken.IsCancellationRequested)
                     throw new TaskCanceledException(task);
                 else
                     throw new TimeoutException("Timed out");

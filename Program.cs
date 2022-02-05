@@ -2523,7 +2523,7 @@ namespace FolderSync
                             //check for file type only after checking IsWatchedFile first since file type checking might already be a slow operation
                             if (await GetIsFile(context))     //for some reason fse.IsFile is set even for folders
                             { 
-                                await AddMessage(ConsoleColor.Gray, $"[{(fse.IsFile ? "F" : "D")}][T]:{fse.FileSystemInfo.FullName}", context);
+                                await AddMessage(ConsoleColor.White, $"[{(fse.IsFile ? "F" : "D")}][T]:{fse.FileSystemInfo.FullName}", context);
 
                                 using (await FileEventLocks.LockAsync(fse.FileSystemInfo.FullName, token))
                                 {

@@ -198,7 +198,7 @@
     <None Include="appsettings.debug2.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Include="appsettings.b15g.json">
+    <None Include="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Include="appsettings.debug5.json">
@@ -210,7 +210,7 @@
     <None Include="appsettings.debug3.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Include="appsettings.json">
+    <None Include="appsettings.ipcam.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Include="FolderSync.bat">
