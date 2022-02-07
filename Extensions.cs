@@ -96,8 +96,10 @@ namespace FolderSync
         //see also https://devblogs.microsoft.com/pfxteam/crafting-a-task-timeoutafter-method/
         public static async Task WaitAsync(this Task task, int timeout, CancellationToken cancellationToken)
         {
-            var tcs = new TaskCompletionSource<bool>();
+            if (task.IsCompleted)
+                return;
 
+            var tcs = new TaskCompletionSource<bool>();
             using (new Timer
             (
                 state => ((TaskCompletionSource<bool>)state).TrySetException(new TimeoutException()), 

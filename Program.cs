@@ -426,7 +426,7 @@ namespace FolderSync
                 }
 
 
-                ThreadPool.SetMaxThreads(40, 40);   //TODO: config
+                ThreadPool.SetMaxThreads(32, 32);   //TODO: config
 
 
                 //start the monitor.
