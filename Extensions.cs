@@ -102,8 +102,8 @@ namespace FolderSync
             var tcs = new TaskCompletionSource<bool>();
             using (new Timer
             (
-                state => ((TaskCompletionSource<bool>)state).TrySetException(new TimeoutException()), 
-                tcs, 
+                state => ((TaskCompletionSource<bool>)state).TrySetException(new TimeoutException()),
+                state: tcs, 
                 dueTime: timeout, 
                 period: Timeout.Infinite
             ))
@@ -163,7 +163,7 @@ namespace FolderSync
                         }
 #endif
                     },
-                    null,
+                    state: null,
                     dueTime: 1000,           //TODO: config
                     period: 60 * 1000       //TODO: config
                 ) 

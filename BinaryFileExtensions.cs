@@ -178,7 +178,19 @@ namespace FolderSync
                                 suppressLongRunningOperationMessage: suppressLongRunningOperationMessage
                             );
                         }   //for (int i = 0; i < contents.Length; i += writeBufferLength)
-                    }
+
+                        //make the flush operation explicit so it can be async
+                        //This is a use case for IAsyncDisposable as proposed in async streams, a candidate feature for C# 8.0, combined with a using statement enhancement that that proposal didn't cover. C# 7.x and below don't have a "nice" way to do asynchronous dispose, so the implicit Dispose() call from your using statement does the flush synchronously. The workaround is directly calling and awaiting on FlushAsync() so that the synchronous Dispose() doesn't have to synchronously flush.
+                        //https://stackoverflow.com/questions/21987533/streamwriter-uses-synchronous-invocation-when-calling-asynchronous-methods
+                        await Extensions.FSOperation
+                        (
+                            async () => await stream.FlushAsync(cancellationToken), 
+                            tempPath,
+                            cancellationToken,
+                            timeout: timeout ?? Global.FileBufferWriteTimeout,
+                            suppressLongRunningOperationMessage: suppressLongRunningOperationMessage
+                        );
+                    }   //using (var stream = new FileStream
 
                     if (createTempFileFirst)
                     {
@@ -211,7 +223,7 @@ namespace FolderSync
                             timeout: timeout,
                             suppressLongRunningOperationMessage: suppressLongRunningOperationMessage
                         );
-                    }
+                    }   //if (createTempFileFirst)
 
 
                     return;     //exit while loop
