@@ -67,6 +67,22 @@ namespace FolderSync
             return null;
         }
 
+        public static List<long> GetLongList(this IConfiguration config, params string[] sectionKeyAlternateNames)
+        {
+            foreach (var sectionKeyAlternateName in sectionKeyAlternateNames)
+            {
+                var list = config.GetSection(sectionKeyAlternateName).GetList();
+                if (list.Count > 0)
+                {
+                    return list
+                            .Select(text => long.Parse(text))   //NB! if the parameter exists then it must be in a proper numeric format
+                            .ToList();
+                }
+            }
+
+            return new List<long>();
+        }
+
         public static List<string> GetListUpperOnWindows(this IConfiguration config, bool? caseSensitiveFilenames, params string[] sectionKeyAlternateNames)
         {
             if (caseSensitiveFilenames == false || (caseSensitiveFilenames == null && !IsLinux))

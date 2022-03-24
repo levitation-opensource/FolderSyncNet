@@ -38,6 +38,9 @@ namespace FolderSync
 
 
         public static bool UseIdlePriority = false;
+        public static List<long> Affinity = new List<long>();
+
+
         public static int DirlistReadDelayMs = 0;
         public static int FileWriteDelayMs = 0;
         public static int ReadBufferKB = 1024;
@@ -278,6 +281,8 @@ namespace FolderSync
 
 
             Global.UseIdlePriority = fileConfig.GetTextUpper("UseIdlePriority") == "TRUE";   //default is false
+            Global.Affinity = fileConfig.GetLongList("Affinity");
+
             Global.DirlistReadDelayMs = (int?)fileConfig.GetLong("DirlistReadDelayMs") ?? Global.DirlistReadDelayMs;
             Global.FileWriteDelayMs = (int?)fileConfig.GetLong("FileWriteDelayMs") ?? Global.FileWriteDelayMs;
             Global.ReadBufferKB = (int?)fileConfig.GetLong("ReadBufferKB") ?? Global.ReadBufferKB;
@@ -422,6 +427,29 @@ namespace FolderSync
                     catch (Exception)
                     {
                         Console.WriteLine("Unable to set idle priority.");
+                    }
+                }
+
+                if (Global.Affinity.Count > 0)
+                {
+                    try
+                    {
+                        var CurrentProcess = Process.GetCurrentProcess();
+
+                        long affinityMask = 0;
+                        foreach (var affinityEntry in Global.Affinity)
+                        {
+                            if (affinityEntry < 0 || affinityEntry > 63)
+                                throw new ArgumentException("Affinity");
+
+                            affinityMask |= (long)1 << (int)affinityEntry;
+                        }
+
+                        CurrentProcess.ProcessorAffinity = new IntPtr(affinityMask);
+                    }
+                    catch (Exception)
+                    {
+                        Console.WriteLine("Unable to set affinity.");
                     }
                 }
 
