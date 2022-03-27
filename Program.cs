@@ -38,6 +38,7 @@ namespace FolderSync
 
 
         public static bool UseIdlePriority = false;
+        public static bool UseBackgroundMode = false;
         public static List<long> Affinity = new List<long>();
 
 
@@ -281,6 +282,7 @@ namespace FolderSync
 
 
             Global.UseIdlePriority = fileConfig.GetTextUpper("UseIdlePriority") == "TRUE";   //default is false
+            Global.UseBackgroundMode = fileConfig.GetTextUpper("UseBackgroundMode") == "TRUE";   //default is false
             Global.Affinity = fileConfig.GetLongList("Affinity");
 
             Global.DirlistReadDelayMs = (int?)fileConfig.GetLong("DirlistReadDelayMs") ?? Global.DirlistReadDelayMs;
@@ -427,6 +429,23 @@ namespace FolderSync
                     catch (Exception)
                     {
                         Console.WriteLine("Unable to set idle priority.");
+                    }
+                }
+
+                if (Global.UseBackgroundMode)
+                {
+                    try
+                    {
+                        var CurrentProcess = Process.GetCurrentProcess();
+
+                        if (ConfigParser.IsWindows)
+                        {
+                            WindowsDllImport.SetPriorityClass(CurrentProcess.Handle, WindowsDllImport.PROCESS_MODE_BACKGROUND_BEGIN);
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        Console.WriteLine("Unable to set background mode.");
                     }
                 }
 
@@ -2927,5 +2946,14 @@ namespace FolderSync
                 return false;
             }
         }
+
+
+        //http://social.msdn.microsoft.com/Forums/en/csharpgeneral/thread/44bf304f-0e6b-4079-89c7-ee02763832fa
+        public const int PROCESS_MODE_BACKGROUND_BEGIN = 0x00100000;
+        public const int PROCESS_MODE_BACKGROUND_END = 0x00200000;
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern bool SetPriorityClass(IntPtr handle, int priorityClass);
+
     }   //internal static class WindowsDllImport 
 }

@@ -32,6 +32,9 @@ Ready to use. Maintained and in active use.
 			"PollingDelay": 60,
 
 			"UseIdlePriority": false,
+			"UseBackgroundMode": false,
+			"Affinity": [ 0 ],
+
 			"DirlistReadDelayMs": 0,
 			"FileWriteDelayMs": 0,
 			"ReadBufferKB": 1024,
