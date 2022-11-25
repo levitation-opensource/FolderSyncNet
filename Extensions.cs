@@ -22,6 +22,25 @@ namespace FolderSync
 {
     public static class Extensions
     {
+        public static Exception GetInnermostException(this Exception ex_in)
+        {
+            //see also https://stackoverflow.com/questions/16565834/exception-getbaseexception-returning-exception-with-not-null-innerexception
+
+            var ex2 = ex_in;
+            var ex2_aggex = ex2 as AggregateException;
+
+            while (
+                ex2_aggex != null
+                && ex2_aggex.InnerExceptions.Count == 1
+            )
+            {
+                ex2 = ex2.InnerException;
+                ex2_aggex = ex2 as AggregateException;
+            }
+
+            return ex2;
+        }
+
         public static long? CheckDiskSpace(string path)
         {
             long? freeBytes = null;
@@ -125,7 +144,7 @@ namespace FolderSync
             {
                 using (await longRunningOperationMessageLock.LockAsync(/*childToken.Token*/))
                 {
-                    await Program.AddMessage(ConsoleColor.Gray, longRunningOperationMessage, DateTime.Now, token: childToken.Token, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
+                    await ConsoleWatch.AddMessage(ConsoleColor.Gray, longRunningOperationMessage, DateTime.Now, token: childToken.Token, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
                     longRunningTaskMessageWrittenRef.Value = true;   //NB! set this flag only after the message was actually written else the task might be canceled before the console lock is taken
                 }
             }
@@ -195,13 +214,24 @@ namespace FolderSync
                 //do not enter the if (longRunningTaskMessageWritten) check before the longRunningOperationMessageLock is free
                 using (await longRunningOperationMessageLock.LockAsync())
                 {
-                    if (longRunningTaskMessageWrittenRef.Value && task.IsCompleted && !task.IsCanceled)
-                    { 
-                        //NB! not using childToken here since it will be already canceled and would raise an exception
-                        await Program.AddMessage(ConsoleColor.Gray, "DONE " + longRunningOperationMessage, DateTime.Now, token: token, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
+                    if (task.IsCompleted && !task.IsCanceled)
+                    {
+                        if (longRunningTaskMessageWrittenRef.Value)
+                        {
+                            //NB! not using childToken here since it will be already canceled and would raise an exception
+                            await ConsoleWatch.AddMessage(ConsoleColor.Gray, "DONE " + longRunningOperationMessage, DateTime.Now, token: token, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
+                        }
+                    }
+                    else if (/*longRunningTaskMessageWrittenRef.Value && */token.IsCancellationRequested)
+                    {
+                        await ConsoleWatch.AddMessage(ConsoleColor.Gray, "CANCELED " + longRunningOperationMessage, DateTime.Now, token: token, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
+                    }
+                    else //if (longRunningTaskMessageWrittenRef.Value)
+                    {
+                        await ConsoleWatch.AddMessage(ConsoleColor.Gray, "TIMED OUT " + longRunningOperationMessage, DateTime.Now, token: token, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
                     }
                 }
-            }
+            }   //if (hasLongRunningOperationMessage)
 
         }   //private static async Task<bool> RunWithTimeoutHelper(Task task, int timeout, CancellationToken token, CancellationTokenSource childToken, string longRunningOperationMessage = null, bool suppressLogFile = false)
 

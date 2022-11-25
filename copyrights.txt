@@ -1,9 +1,11 @@
 ﻿
+AlphaFS.New 2.3.0, MIT Licence. https://www.nuget.org/packages/AlphaFS.New/
+AlphaVSS 2.0.0, MIT Licence. https://www.nuget.org/packages/AlphaVSS/
 AsyncEnumerator 4.0.2, MIT Licence. https://www.nuget.org/packages/AsyncEnumerator/
 Icon: Martins Ratkus, Attribution 3.0 Unported (CC BY 3.0). https://www.iconfinder.com/icons/4014679/content_data_mobile_share_sync_transfer_icon
 Microsoft.Extensions.Configuration.Json 1.1.2, Microsoft, Microsoft .Net Library License. https://www.nuget.org/packages/Microsoft.Extensions.Configuration.Json/1.1.2
 MyOddWeb.DirectoryWatcher 0.1.8, 2018 Florent Guelfucci, MIT Licence. https://www.nuget.org/packages/MyOddWeb.DirectoryWatcher/0.1.8
 .NET runtime source, .NET Foundation and Contributors, MIT License. https://github.com/dotnet/runtime/blob/5ddc873d9ea6cd4bc6a935fec3057fe89a6932aa/src/libraries/System.IO.FileSystem/src/System/IO/File.cs and https://github.com/dotnet/runtime/blob/933988c35c172068652162adf6f20477231f815e/src/libraries/Common/tests/System/Threading/Tasks/TaskTimeoutExtensions.cs
 Nito.AspNetBackgroundTasks 1.0.0, Stephen Cleary, MIT License. https://www.nuget.org/packages/Nito.AspNetBackgroundTasks/
-Nito.AsyncEx 5.0.0, Stephen Cleary, MIT License. https://www.nuget.org/packages/Nito.AsyncEx.Coordination/
+Nito.AsyncEx 5.1.2, Stephen Cleary, MIT License. https://www.nuget.org/packages/Nito.AsyncEx.Coordination/
 NReco.Text.AhoCorasickDoubleArrayTrie 1.0.2, 2017-2019 Vitaliy Fedorchenko, Apache-2.0 License. https://www.nuget.org/packages/NReco.Text.AhoCorasickDoubleArrayTrie

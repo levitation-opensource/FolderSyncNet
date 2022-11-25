@@ -1,4 +1,12 @@
-﻿#define ASYNC
+﻿//
+// Copyright (c) Roland Pihlakas 2019 - 2022
+// roland@simplify.ee
+//
+// Roland Pihlakas licenses this file to you under the GNU Lesser General Public License, ver 2.1.
+// See the LICENSE file for more information.
+//
+
+#define ASYNC
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;

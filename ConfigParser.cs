@@ -17,9 +17,19 @@ namespace FolderSync
         public static readonly bool IsLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
         public static readonly bool IsMacOS = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
 
-        public static string ToUpperInvariantOnWindows(this string text, bool? caseSensitiveFilenames)
+        public static bool IgnoreCase
         {
-            if (caseSensitiveFilenames == false || (caseSensitiveFilenames == null && !IsLinux))  //Under Windows assume NTFS or FAT filesystem which are usually case-insensitive. Under Mac filesystems are also case-insensitive by default.
+            get
+            {
+                //Under Windows assume NTFS or FAT filesystem which are usually case-insensitive. Under Mac filesystems are also case-insensitive by default.
+                return Global.CaseSensitiveFilenames == false
+                    || (Global.CaseSensitiveFilenames == null && !ConfigParser.IsLinux);
+            }
+        }
+
+        public static string ToUpperInvariantOnWindows(this string text)
+        {
+            if (ConfigParser.IgnoreCase)
                 return text?.ToUpperInvariant();
             else
                 return text;
