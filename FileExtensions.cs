@@ -155,7 +155,7 @@ namespace FolderSync
                 catch (Exception ex) when (     //roland
                     /*ex is IOException
                     || ex is UnauthorizedAccessException    //can happen when a folder was just created     //TODO: abandon retries after a certain number of attempts in this case
-                    || */ex.GetInnermostException() is IOException
+                    || */ex.GetInnermostException() is IOException  //this includes DriveNotFoundException
                     || ex.GetInnermostException() is UnauthorizedAccessException
                 )
                 {

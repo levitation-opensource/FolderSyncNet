@@ -22,6 +22,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Dasync.Collections;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Win32;
 using myoddweb.directorywatcher;
 using myoddweb.directorywatcher.interfaces;
 using Nito.AspNetBackgroundTasks;
@@ -39,6 +40,8 @@ namespace FolderSync
         public static readonly string NullChar = new string(new char[]{ (char)0 });
 
         public static readonly string DirectorySeparatorChar = new string(new char[] { Path.DirectorySeparatorChar });
+
+        private static readonly AsyncManualResetEvent ExitEvent = new AsyncManualResetEvent(false);
 
 
         private static byte[] GetHash(string inputString)
@@ -226,7 +229,7 @@ namespace FolderSync
 
 
                     //listen for the Ctrl+C 
-                    await WaitForCtrlC();
+                    await WaitForCtrlC(watch);
 
                     Console.WriteLine("Stopping...");
 
@@ -248,17 +251,64 @@ namespace FolderSync
             }
         }   //private static async Task MainTask()
 
-        private static Task WaitForCtrlC()
+        private static Task WaitForCtrlC(Watcher watch)
         {
-            var exitEvent = new AsyncManualResetEvent(false);
-            Console.CancelKeyPress += delegate (object sender, ConsoleCancelEventArgs e)
-            {
-                Global.CancellationToken.Cancel();
-                e.Cancel = true;
-                Console.WriteLine("Stop detected.");
-                exitEvent.Set();
-            };
-            return exitEvent.WaitAsync();
+            //handle hibernation. Need to stop filesystem monitoring while system is suspended, else the process might start hogging the cpu after system resumes for some reason
+            SystemEvents.PowerModeChanged += new PowerModeChangedEventHandler((sender, e) => OnPowerModeChanged(sender, e, watch));
+
+
+            Console.CancelKeyPress += new ConsoleCancelEventHandler(Console_CancelKeyPress);
+
+
+            //need separate handlers for system exit since else this process will block system reboot
+
+            //see http://stackoverflow.com/questions/529867/does-application-applicationexit-event-work-to-be-notified-of-exit-in-non-winform
+            //NB! TODO: this does not catch windows shutdown
+            Application.ThreadExit += new EventHandler(OnAppMainThreadExit);
+            Application.ApplicationExit += new EventHandler(OnAppMainThreadExit);
+            AppDomain.CurrentDomain.DomainUnload += new EventHandler(OnAppMainThreadExit);
+            AppDomain.CurrentDomain.ProcessExit += new EventHandler(OnAppMainThreadExit);
+            AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(OnAppMainThreadExitUH);
+            SystemEvents.SessionEnding += new SessionEndingEventHandler(OnSessionEnding);
+
+            return ExitEvent.WaitAsync();
+        }
+
+        private static void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e, Watcher watch)
+        {
+            if (e.Mode == PowerModes.Resume)
+                watch.Start();
+            else if (e.Mode == PowerModes.Suspend)
+                watch.Stop();
+        }
+
+        private static void SetExitEvent()
+        {
+            Global.CancellationToken.Cancel();
+            //e.Cancel = true;
+            Console.WriteLine("Stop detected.");
+            ExitEvent.Set();
+        }
+
+        private static void Console_CancelKeyPress(object sender, ConsoleCancelEventArgs e)
+        {
+            e.Cancel = true;
+            SetExitEvent();
+        }
+
+        private static void OnAppMainThreadExit(object sender, EventArgs e)
+        {
+            SetExitEvent();
+        }
+
+        private static void OnAppMainThreadExitUH(object sender, UnhandledExceptionEventArgs e)
+        {
+            SetExitEvent();
+        }
+
+        private static void OnSessionEnding(object sender, SessionEndingEventArgs e)
+        {
+            SetExitEvent();
         }
     }
 
@@ -530,7 +580,7 @@ namespace FolderSync
 
                         return;
                     }
-                    catch (IOException)
+                    catch (IOException)  //this includes DriveNotFoundException
                     {
                         //retry after delay
 #if !NOASYNC
@@ -694,6 +744,7 @@ namespace FolderSync
                 (
                     Global.MirrorWatchedExtension.Any(x => fullNameInvariant.EndsWith("." + x))
                     || Global.MirrorWatchedExtension.Contains("*")
+                    || Global.MirrorWatchedFileNames.Contains(Path.GetFileName(fullNameInvariant))
                 )
                 &&
                 Global.MirrorExcludedExtensions.All(x =>  //TODO: optimise
@@ -729,6 +780,7 @@ namespace FolderSync
                 (
                     Global.HistoryWatchedExtension.Any(x => fullNameInvariant.EndsWith("." + x))
                     || Global.HistoryWatchedExtension.Contains("*")
+                    || Global.HistoryWatchedFileNames.Contains(Path.GetFileName(fullNameInvariant))
                 )
                 &&
                 Global.HistoryExcludedExtensions.All(x =>  //TODO: optimise

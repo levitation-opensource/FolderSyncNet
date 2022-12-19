@@ -98,6 +98,7 @@ namespace FolderSync
             Global.MirrorDestPath = Extensions.GetDirPathWithTrailingSlash(fileConfig.GetTextUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorDestPath", "DestPath"));
 
             Global.MirrorWatchedExtension = new HashSet<string>(fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorWatchedExtensions", "MirrorWatchedExtension", "WatchedExtensions", "WatchedExtension"));
+            Global.MirrorWatchedFileNames = new HashSet<string>(fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorWatchedFileNames", "MirrorWatchedFileName", "WatchedFileNames", "WatchedFileName"));
 
             //this would need Microsoft.Extensions.Configuration and Microsoft.Extensions.Configuration.Binder packages
             Global.MirrorExcludedExtensions = new HashSet<string>(fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "MirrorExcludedExtensions", "MirrorExcludedExtension", "ExcludedExtensions", "ExcludedExtension"));   //NB! UpperOnWindows
@@ -124,6 +125,7 @@ namespace FolderSync
             Global.HistoryDestPath = Extensions.GetDirPathWithTrailingSlash(fileConfig.GetTextUpperOnWindows(Global.CaseSensitiveFilenames, "HistoryDestPath"));
 
             Global.HistoryWatchedExtension = new HashSet<string>(fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "HistoryWatchedExtensions", "HistoryWatchedExtension", "WatchedExtensions", "WatchedExtension"));
+            Global.HistoryWatchedFileNames = new HashSet<string>(fileConfig.GetListUpperOnWindows(Global.CaseSensitiveFilenames, "HistoryWatchedFileNames", "HistoryWatchedFileName", "WatchedFileNames", "WatchedFileName"));
 
             Global.HistoryVersionFormat = fileConfig.GetTextUpper("HistoryVersionFormat") ?? "TIMESTAMP_BEFORE_EXT";
             Global.HistoryVersionSeparator = fileConfig.GetText("HistoryVersionSeparator") ?? ".";  //NB! no uppercase transformation here

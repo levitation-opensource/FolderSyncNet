@@ -82,6 +82,7 @@ namespace FolderSync
 
 
         public static HashSet<string> MirrorWatchedExtension = new HashSet<string>() { "*" };
+        public static HashSet<string> MirrorWatchedFileNames = new HashSet<string>() { };
         public static HashSet<string> MirrorExcludedExtensions = new HashSet<string>() { "*~", "tmp" };
 
         public static List<string> MirrorIgnorePathsStartingWithList = new List<string>();
@@ -96,6 +97,7 @@ namespace FolderSync
 
         public static bool EnableHistory = false;
         public static HashSet<string> HistoryWatchedExtension = new HashSet<string>() { "*" };
+        public static HashSet<string> HistoryWatchedFileNames = new HashSet<string>() { };
         public static HashSet<string> HistoryExcludedExtensions = new HashSet<string>() { "*~", "bak", "tmp" };
 
         public static List<string> HistoryIgnorePathsStartingWithList = new List<string>();

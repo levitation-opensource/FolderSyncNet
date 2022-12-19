@@ -66,7 +66,7 @@ namespace FolderSync
                     /*ex is IOException 
                     || ex is TimeoutException
                     || ex is UnauthorizedAccessException    //can happen when a folder was just created     //TODO: abandon retries after a certain number of attempts in this case
-                    || */ex.GetInnermostException() is IOException
+                    || */ex.GetInnermostException() is IOException  //this includes DriveNotFoundException
                     || ex.GetInnermostException() is TimeoutException
                     || ex.GetInnermostException() is UnauthorizedAccessException
                 )
@@ -298,7 +298,7 @@ namespace FolderSync
                     /*ex is IOException
                     || ex is TimeoutException
                     || ex is UnauthorizedAccessException    //can happen when a folder was just created     //TODO: abandon retries after a certain number of attempts in this case
-                    || */ex.GetInnermostException() is IOException
+                    || */ex.GetInnermostException() is IOException  //this includes DriveNotFoundException
                     || ex.GetInnermostException() is TimeoutException
                     || ex.GetInnermostException() is UnauthorizedAccessException
                 )

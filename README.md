@@ -64,6 +64,8 @@ Ready to use. Maintained and in active use.
 			"MirrorWatchedExtensions": [
 				"*"
 			],
+			"MirrorWatchedFileNames": [
+			],
 			"MirrorExcludedExtensions": [
 				"*~",
 				"tmp"
@@ -83,7 +85,10 @@ Ready to use. Maintained and in active use.
 			],
 
 			"HistoryWatchedExtensions": [
-				"*"
+				"txt"
+			],
+			"HistoryWatchedFileNames": [
+				"ZMover.dat"
 			],
 			"HistoryExcludedExtensions": [
 				"*~",
