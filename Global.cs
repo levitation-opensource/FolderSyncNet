@@ -1,5 +1,5 @@
 ﻿//
-// Copyright (c) Roland Pihlakas 2019 - 2022
+// Copyright (c) Roland Pihlakas 2019 - 2023
 // roland@simplify.ee
 //
 // Roland Pihlakas licenses this file to you under the GNU Lesser General Public License, ver 2.1.
@@ -61,7 +61,7 @@ namespace FolderSync
         public static string SrcPath = "";
 
 
-        public static bool AllowVSS = false;     //TODO!!!
+        public static bool AllowVSS = false; //true;     //TODO!!!
 
 
         public static bool EnableMirror = true;

@@ -65,7 +65,7 @@ namespace FolderSync
                     //sw.WriteAsync(buffer, 0, batchSize).ConfigureAwait(false);
                     await Extensions.FSOperation
                     (
-                        async () => await sw.WriteAsync(buffer, 0, batchSize),  //TODO: add cancellationToken here?
+                        async (cancellationAndTimeoutToken) => await sw.WriteAsync(buffer, 0, batchSize),  //TODO: add cancellationToken here?
                         path,
                         cancellationToken,
                         timeout: timeout ?? Global.FileBufferWriteTimeout,
@@ -77,17 +77,36 @@ namespace FolderSync
                 }
 
                 //cancellationToken.ThrowIfCancellationRequested();     //cob roland: let log writing complete
-                await Extensions.FSOperation
-                (
-                    async () => await sw.FlushAsync(),  //TODO: add cancellationToken here?
-                    path,
-                    //cancellationToken,    //cob roland: let log writing complete
-                    default(CancellationToken),  //roland: let log writing complete
-                    timeout: timeout ?? Global.FileBufferWriteTimeout,
-                    suppressLogFile: suppressLogFile,
-                    suppressLongRunningOperationMessage: suppressLongRunningOperationMessage
-                );
-                cancellationToken.ThrowIfCancellationRequested();    //roland: let log writing complete
+                /*do    //roland
+                {
+                    try
+                    {*/
+                        await Extensions.FSOperation
+                        (
+                            async (cancellationAndTimeoutToken) => await sw.FlushAsync(),  //TODO: add cancellationToken here?
+                            path,
+                            //cancellationToken,    //cob roland: let log writing complete
+                            default(CancellationToken),  //roland: let log writing complete
+                            timeout: timeout ?? Global.FileBufferWriteTimeout,
+                            suppressLogFile: suppressLogFile,
+                            suppressLongRunningOperationMessage: suppressLongRunningOperationMessage
+                        );
+
+                        /*break;
+                    }
+                    catch (Exception)
+                    {
+                        //TODO: tune delay
+#if !NOASYNC
+                        await Task.Delay(10, cancellationToken);
+#else
+                        cancellationToken.WaitHandle.WaitOne(10);
+#endif
+                    }
+                }
+                while (!cancellationToken.IsCancellationRequested);*/
+
+                cancellationToken.ThrowIfCancellationRequested();    //roland: let log writing complete at least for one attempt loop
             }
             finally
             {
@@ -118,6 +137,7 @@ namespace FolderSync
                 throw new ArgumentException("Argument_EmptyPath", nameof(path));
 
 
+            var longRunningOperationMessage = !suppressLongRunningOperationMessage ? "Running append operation on " + path : null;
 
             while (true)    //roland
             {
@@ -160,13 +180,23 @@ namespace FolderSync
                 )
                 {
                     //retry after delay
+
+                    if (longRunningOperationMessage != null)
+                    {
+                        await ConsoleWatch.AddMessage(ConsoleColor.Yellow, "RETRYING " + longRunningOperationMessage, DateTime.Now, token: cancellationToken, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
+                    }
 #if !NOASYNC
                     await Task.Delay(1000, cancellationToken);     //TODO: config file?
 #else
                     cancellationToken.WaitHandle.WaitOne(1000);
 #endif
                 }
+            }   //while (true)
+
+            if (longRunningOperationMessage != null)
+            {
+                await ConsoleWatch.AddMessage(ConsoleColor.Red, "FAILED AND GIVING UP " + longRunningOperationMessage, DateTime.Now, token: cancellationToken, suppressLogFile: suppressLogFile);     //NB! suppressLogFile to avoid infinite recursion
             }
-        }
+        }   //public static async Task AppendAllTextAsync()
     }
 }

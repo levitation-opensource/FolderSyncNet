@@ -1,5 +1,5 @@
 ﻿//
-// Copyright (c) Roland Pihlakas 2019 - 2022
+// Copyright (c) Roland Pihlakas 2019 - 2023
 // roland@simplify.ee
 //
 // Roland Pihlakas licenses this file to you under the GNU Lesser General Public License, ver 2.1.
@@ -18,12 +18,14 @@ using myoddweb.directorywatcher.interfaces;
 using Nito.AspNetBackgroundTasks;
 using Nito.AsyncEx;
 
+//using DirectoryInfo = FolderSyncNetSource.DirectoryInfo;
+
 namespace FolderSync
 {
-    class DummyFileSystemEvent : IFileSystemEvent
+    class DummyFileSystemEvent //: IFileSystemEvent
     {
         [DebuggerStepThrough]
-        public DummyFileSystemEvent(FileSystemInfo fileSystemInfo)
+        public DummyFileSystemEvent(FileSystemInfo fileSystemInfo)  //this constructor is needed for interface compatibility
         {
             FileSystemInfo = fileSystemInfo;
             FullName = fileSystemInfo.FullName;
@@ -34,7 +36,20 @@ namespace FolderSync
             IsFile = true;
         }
 
+        [DebuggerStepThrough]
+        public DummyFileSystemEvent(IFileSystemEvent iFileSystemEvent)
+        {
+            FileSystemInfo = iFileSystemEvent.FileSystemInfo;
+            FullName = iFileSystemEvent.FileSystemInfo.FullName;
+            Name = iFileSystemEvent.FileSystemInfo.Name;
+            Action = EventAction.Added;
+            Error = EventError.None;
+            DateTimeUtc = DateTime.UtcNow;
+            IsFile = true;
+        }
+
         public FileSystemInfo FileSystemInfo { [DebuggerStepThrough]get; }
+        
         public string FullName { [DebuggerStepThrough]get; }
         public string Name { [DebuggerStepThrough]get; }
         public EventAction Action { [DebuggerStepThrough]get; }
@@ -104,59 +119,65 @@ namespace FolderSync
         {
             var NewFileInfos = !Global.MirrorIgnoreSrcDeletions ? new Dictionary<string, FileInfo>() : null;
 
-            var fileInfos = ProcessSubDirs(new DirectoryInfo(Extensions.GetLongPath(path)), extension, isSrcPath, forHistory, initialSyncMessageContext: initialSyncMessageContext);
-            await fileInfos.ForEachAsync(fileInfo =>
-            {
-                if (!Global.MirrorIgnoreSrcDeletions)
-                    NewFileInfos.Add(fileInfo.FullName, fileInfo);
+            var fileInfos = ProcessSubDirs(new FolderSyncNetSource.DirectoryInfo(Extensions.GetLongPath(path)), extension, isSrcPath, forHistory, initialSyncMessageContext: initialSyncMessageContext);
 
-                FileInfo prevFileInfo;
-                if (!PrevFileInfos.Value.TryGetValue(fileInfo.FullName, out prevFileInfo))
+            await fileInfos.ForEachAsync
+            (
+                fileInfo =>
                 {
-                    if (Global.MirrorIgnoreSrcDeletions)
-                        PrevFileInfos.Value.Add(fileInfo.FullName, fileInfo);
+                    if (!Global.MirrorIgnoreSrcDeletions)
+                        NewFileInfos.Add(fileInfo.FullName, fileInfo);
 
-                    if (initialSyncMessageContext?.IsInitialScan == true)
-                        InitialSyncCountdownEvent.AddCount();
-
-                    BackgroundTaskManager.Run(async () =>
-                    {
-                        await ConsoleWatch.OnAddedAsync
-                        (
-                            new DummyFileSystemEvent(fileInfo),
-                            Global.CancellationToken.Token,
-                            initialSyncMessageContext?.IsInitialScan == true
-                        );
-
-                        if (initialSyncMessageContext?.IsInitialScan == true)
-                            InitialSyncCountdownEvent.Signal();
-                    });
-                }
-                else
-                {
-                    if (
-                        prevFileInfo.Length != fileInfo.Length
-                        || prevFileInfo.LastWriteTimeUtc != fileInfo.LastWriteTimeUtc
-
-                    //TODO: support for copying the file attributes
-                    //|| prevFileInfo.Attributes != fileInfo.Attributes   
-                    )
+                    FileInfo prevFileInfo;
+                    //FolderSyncNetSource.FileInfo prevFileInfo;
+                    if (!PrevFileInfos.Value.TryGetValue(fileInfo.FullName, out prevFileInfo))
                     {
                         if (Global.MirrorIgnoreSrcDeletions)
-                            PrevFileInfos.Value[fileInfo.FullName] = fileInfo;  //NB! update the file info
+                            PrevFileInfos.Value.Add(fileInfo.FullName, fileInfo);
+
+                        if (initialSyncMessageContext?.IsInitialScan == true)
+                            InitialSyncCountdownEvent.AddCount();
 
                         BackgroundTaskManager.Run(async () =>
                         {
-                            await ConsoleWatch.OnTouchedAsync
+                            await ConsoleWatch.OnAddedAsync
                             (
                                 new DummyFileSystemEvent(fileInfo),
                                 Global.CancellationToken.Token,
                                 initialSyncMessageContext?.IsInitialScan == true
                             );
+
+                            if (initialSyncMessageContext?.IsInitialScan == true)
+                                InitialSyncCountdownEvent.Signal();
                         });
                     }
-                }   //if (!PrevAddedFileInfos.TryGetValue(fileInfo.FullName, out prevFileInfo))
-            });   //await fileInfos.ForEachAsync(async fileInfo => {
+                    else
+                    {
+                        if (
+                            prevFileInfo.Length != fileInfo.Length
+                            || prevFileInfo.LastWriteTimeUtc != fileInfo.LastWriteTimeUtc
+
+                        //TODO: support for copying the file attributes
+                        //|| prevFileInfo.Attributes != fileInfo.Attributes   
+                        )
+                        {
+                            if (Global.MirrorIgnoreSrcDeletions)
+                                PrevFileInfos.Value[fileInfo.FullName] = fileInfo;  //NB! update the file info
+
+                            BackgroundTaskManager.Run(async () =>
+                            {
+                                await ConsoleWatch.OnTouchedAsync
+                                (
+                                    new DummyFileSystemEvent(fileInfo),
+                                    Global.CancellationToken.Token,
+                                    initialSyncMessageContext?.IsInitialScan == true
+                                );
+                            });
+                        }
+                    }   //if (!PrevAddedFileInfos.TryGetValue(fileInfo.FullName, out prevFileInfo))
+                },
+                Global.CancellationToken.Token
+            );   //await fileInfos.ForEachAsync(async fileInfo => {
 
             if (!Global.MirrorIgnoreSrcDeletions)
             {
@@ -182,10 +203,13 @@ namespace FolderSync
 
         }   //private static async Task ScanFolder(string path, string extension, bool forHistory, bool keepFileInfosForLaterPolling)
 
-        private static IAsyncEnumerable<FileInfo> ProcessSubDirs(DirectoryInfo srcDirInfo, string searchPattern, bool isSrcPath, bool forHistory, int recursionLevel = 0, WatcherContext initialSyncMessageContext = null)
+        private static IAsyncEnumerable<FileInfo> ProcessSubDirs(FolderSyncNetSource.DirectoryInfo srcDirInfo, string searchPattern, bool isSrcPath, bool forHistory, int recursionLevel = 0, WatcherContext initialSyncMessageContext = null)
         {
             return new AsyncEnumerable<FileInfo>(async yield => {
+                //return new AsyncEnumerable<FolderSyncNetSource.FileInfo>(async yield => {
 
+                if (Global.CancellationToken.IsCancellationRequested)
+                    return;
 
                 if (Global.LogInitialScan && initialSyncMessageContext?.IsInitialScan == true)
                     await ConsoleWatch.AddMessage(ConsoleColor.Blue, "Scanning folder " + Extensions.GetLongPath(srcDirInfo.FullName), initialSyncMessageContext);
@@ -213,16 +237,18 @@ namespace FolderSync
 
 
                 var destFileInfosDict = new Dictionary<string, CachedFileInfo>();
-                var destFileInfosTask = Task.CompletedTask;
+                var destOrHistoryFileInfosTask = Task.CompletedTask;
 
                 var historyFileInfosDict = new Dictionary<string, CachedFileInfo>();
-                var historyFileInfosTask = Task.CompletedTask;
+                //var historyFileInfosTask = Task.CompletedTask;
 
-                AsyncLockQueueDictionary<string>.LockDictReleaser destDirCacheLock = null;
-                AsyncLockQueueDictionary<string>.LockDictReleaser historyDirCacheLock = null;
+                AsyncLockQueueDictionary<string>.LockDictReleaser destOrHistoryDirCacheLock = null;
+                //AsyncLockQueueDictionary<string>.LockDictReleaser historyDirCacheLock = null;
 
                 FileInfo[] fileInfos = null;
-                DirectoryInfo[] dirInfos = null;
+                //DirectoryInfo[] dirInfos = null;
+                //FolderSyncNetSource.FileInfo[] fileInfos = null;
+                FolderSyncNetSource.DirectoryInfo[] dirInfos = null;
 
                 bool updateDestDirPersistentCache = false;
                 bool updateHistoryDirPersistentCache = false;
@@ -232,35 +258,53 @@ namespace FolderSync
                     if (Global.CacheDestAndHistoryFolders/* || Global.PersistentCacheDestAndHistoryFolders*/)
                     {
                         if (
-                            !Global.BidirectionalMirror
-                            && Global.EnableMirror && isSrcPath && !forHistory
+                            isSrcPath
+                            && (
+                                (
+                                    !forHistory
+                                    && !Global.BidirectionalMirror
+                                    && Global.EnableMirror 
+                                )
+                                ||
+                                (
+                                    forHistory
+                                    && Global.EnableHistory 
+                                )
+                            )
                         )
                         {
-                            destFileInfosTask = Task.Run(async () =>
+                            destOrHistoryFileInfosTask = Task.Run(async () =>
                             {
                                 try
                                 {
-                                    var destDirName = Extensions.GetLongPath(ConsoleWatch.GetOtherDirName(srcDirInfo.FullName, forHistory));
-                                    destDirCacheLock = await Global.PersistentCacheLocks.LockAsync(destDirName.ToUpperInvariantOnWindows(), Global.CancellationToken.Token);
-                                    var destFileInfos = (await ConsoleWatch.ReadFileInfoCache(destDirName, forHistory))?.Values.ToList();
+                                    var destOrHistoryDirName = Extensions.GetLongPath(ConsoleWatch.GetOtherDirName(srcDirInfo.FullName, forHistory));
+                                    destOrHistoryDirCacheLock = await Global.PersistentCacheLocks.LockAsync(destOrHistoryDirName.ToUpperInvariantOnWindows(), Global.CancellationToken.Token);
+                                    var destOrHistoryFileInfos = (await ConsoleWatch.ReadFileInfoCache(destOrHistoryDirName, forHistory))?.Values.ToList();
 
-                                    if (destFileInfos == null)
+                                    if (destOrHistoryFileInfos == null)
                                     {
-                                        updateDestDirPersistentCache = true;
+                                        //TODO!!! if cachedFileInfos == null then scan entire folder and create cached file infos file
 
-                                        var destDirInfo = new DirectoryInfo(destDirName);
+                                        if (!forHistory)
+                                            updateDestDirPersistentCache = true;
+
+                                        if (forHistory)
+                                            updateHistoryDirPersistentCache = true;
+
+
+                                        var destOrHistoryDirInfo = new FolderSyncNetSource.DirectoryInfo(destOrHistoryDirName);
 
                                         if (await Extensions.FSOperation
                                         (
-                                            () => Directory.Exists(destDirName),
-                                            destDirName,
+                                            cancellationAndTimeoutToken => Directory.Exists(destOrHistoryDirName),
+                                            destOrHistoryDirName,
                                             Global.CancellationToken.Token
                                         ))
                                         {
-                                            destFileInfos = (await Extensions.DirListOperation
+                                            destOrHistoryFileInfos = (await Extensions.DirListOperation
                                             (
-                                                () => destDirInfo.GetFiles(searchPattern, SearchOption.TopDirectoryOnly),
-                                                destDirInfo.FullName,
+                                                cancellationAndTimeoutToken => destOrHistoryDirInfo.GetFiles(searchPattern, SearchOption.TopDirectoryOnly, cancellationAndTimeoutToken),
+                                                destOrHistoryDirInfo.FullName,
                                                 Global.RetryCountOnEmptyDirlist,
                                                 Global.CancellationToken.Token
                                             ))
@@ -269,30 +313,33 @@ namespace FolderSync
                                         }
                                         else
                                         {
-                                            destFileInfos = new List<CachedFileInfo>();
+                                            destOrHistoryFileInfos = new List<CachedFileInfo>();
                                         }
                                     }
                                     else   //if (destFileInfos == null)
                                     {
-                                        foreach (var fileInfo in destFileInfos)
+                                        foreach (var fileInfo in destOrHistoryFileInfos)
                                         {
-                                            fileInfo.FullName = Path.Combine(Global.MirrorDestPath, fileInfo.FullName);
+                                            fileInfo.FullName = FolderSyncNetSource.Path.Combine(Global.MirrorDestPath, fileInfo.FullName);
                                         }
                                     }
 
 
                                     if (
-                                        !Global.CreatedFoldersCache.ContainsKey(destDirName.ToUpperInvariantOnWindows())
-                                        && destFileInfos.Any(x => x.Exists == true)
+                                        !Global.CreatedFoldersCache.ContainsKey(destOrHistoryDirName.ToUpperInvariantOnWindows())
+                                        && destOrHistoryFileInfos.Any(x => x.Exists == true)
                                     )
                                     {
-                                        Global.CreatedFoldersCache.TryAdd(destDirName.ToUpperInvariantOnWindows(), true);
+                                        Global.CreatedFoldersCache.TryAdd(destOrHistoryDirName.ToUpperInvariantOnWindows(), true);
                                     }
 
 
                                     //Google Drive can have multiple files with same name
-                                    foreach (var fileInfo in destFileInfos)
+                                    foreach (var fileInfo in destOrHistoryFileInfos)
                                     {
+                                        if (Global.CancellationToken.IsCancellationRequested)
+                                            return;
+
                                         var longFullName = Extensions.GetLongPath(fileInfo.FullName);
 
                                         CachedFileInfo prevFileInfo;
@@ -311,12 +358,16 @@ namespace FolderSync
                                             }
                                         }
 
-                                        destFileInfosDict[longFullName.ToUpperInvariantOnWindows()] = fileInfo;
+                                        if (!forHistory)
+                                            destFileInfosDict[longFullName.ToUpperInvariantOnWindows()] = fileInfo;
+                                        else
+                                            historyFileInfosDict[longFullName.ToUpperInvariantOnWindows()] = fileInfo;
                                     }
                                 }
                                 catch (Exception ex) when (
                                     ex is DirectoryNotFoundException 
                                     || ex is UnauthorizedAccessException
+                                    || ex is ArgumentException  //illegal characters in path
                                 )
                                 {
                                     //ignore the error
@@ -335,7 +386,7 @@ namespace FolderSync
                         {
                             fileInfos = await Extensions.DirListOperation
                             (
-                                () => srcDirInfo.GetFiles(searchPattern, SearchOption.TopDirectoryOnly),
+                                cancellationAndTimeoutToken => srcDirInfo.GetFiles(searchPattern, SearchOption.TopDirectoryOnly, cancellationAndTimeoutToken),
                                 srcDirInfo.FullName,
                                 Global.RetryCountOnEmptyDirlist,
                                 Global.CancellationToken.Token
@@ -344,9 +395,12 @@ namespace FolderSync
                         catch (Exception ex) when (
                             ex is DirectoryNotFoundException 
                             || ex is UnauthorizedAccessException
+                            || ex is ArgumentException  //illegal characters in path
+                            || ex is TimeoutException
                         )
                         {
                             fileInfos = Array.Empty<FileInfo>();
+                            //fileInfos = Array.Empty<FolderSyncNetSource.FileInfo>();
 
                             //UnauthorizedAccessException can also occur when a folder was just created, but it can still be ignored here since then file add handler will take care of that folder
                         }
@@ -360,7 +414,7 @@ namespace FolderSync
                         {
                             dirInfos = await Extensions.DirListOperation
                             (
-                                () => srcDirInfo.GetDirectories("*", SearchOption.TopDirectoryOnly),
+                                cancellationAndTimeoutToken => srcDirInfo.GetDirectories("*", SearchOption.TopDirectoryOnly, cancellationAndTimeoutToken),
                                 srcDirInfo.FullName,
                                 Global.RetryCountOnEmptyDirlist,
                                 Global.CancellationToken.Token
@@ -369,9 +423,12 @@ namespace FolderSync
                         catch (Exception ex) when (
                             ex is DirectoryNotFoundException 
                             || ex is UnauthorizedAccessException
+                            || ex is ArgumentException  //illegal characters in path
+                            || ex is TimeoutException
                         )
                         {
-                            dirInfos = Array.Empty<DirectoryInfo>();
+                            //dirInfos = Array.Empty<DirectoryInfo>();
+                            dirInfos = Array.Empty<FolderSyncNetSource.DirectoryInfo>();
 
                             //UnauthorizedAccessException can also occur when a folder was just created, but it can still be ignored here since then file add handler will take care of that folder
                         }
@@ -379,7 +436,7 @@ namespace FolderSync
                     .WaitAsync(Global.CancellationToken.Token);
 
 
-                    await Task.WhenAll(destFileInfosTask, historyFileInfosTask, fileInfosTask, dirInfosTask);
+                    await Task.WhenAll(destOrHistoryFileInfosTask, /*historyFileInfosTask, */fileInfosTask, dirInfosTask);
 
 
                     if (Global.CacheDestAndHistoryFolders/* || Global.PersistentCacheDestAndHistoryFolders*/)
@@ -389,6 +446,9 @@ namespace FolderSync
 
                         foreach (var fileInfo in fileInfos)
                         {
+                            if (Global.CancellationToken.IsCancellationRequested)
+                                return;
+
                             if (
                                 !Global.BidirectionalMirror
                                 && Global.EnableMirror && isSrcPath && !forHistory
@@ -457,23 +517,34 @@ namespace FolderSync
                 }
                 finally
                 {
-                    destDirCacheLock?.Dispose();
-                    historyDirCacheLock?.Dispose();
+                    destOrHistoryDirCacheLock?.Dispose();
+                    //historyDirCacheLock?.Dispose();
                 }
 
 
                 //NB! loop the fileinfos only after dest and history fileinfo cache is populated
                 foreach (var fileInfo in fileInfos)
                 {
+                    if (Global.CancellationToken.IsCancellationRequested)
+                        return;
+
                     await yield.ReturnAsync(fileInfo);
                 }
 
 
                 foreach (var dirInfo in dirInfos)
                 {
+                    if (Global.CancellationToken.IsCancellationRequested)
+                        return;
+
                     //TODO: option to follow reparse points
-                    if ((dirInfo.Attributes & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint)
+                    if (
+                        (int)dirInfo.Attributes != -1   //some unusual attributes found in some folders of network drives
+                        && (dirInfo.Attributes & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint
+                    )
+                    {
                         continue;
+                    }
 
 
                     var nonFullNameInvariantWithLeadingSlash = DirectorySeparatorChar + Extensions.GetDirPathWithTrailingSlash(ConsoleWatch.GetNonFullName(dirInfo.FullName.ToUpperInvariantOnWindows()));
@@ -506,10 +577,14 @@ namespace FolderSync
 
 
                     var subDirFileInfos = ProcessSubDirs(dirInfo, searchPattern, isSrcPath, forHistory, recursionLevel + 1, initialSyncMessageContext: initialSyncMessageContext);
-                    await subDirFileInfos.ForEachAsync(async subDirFileInfo =>
-                    {
-                        await yield.ReturnAsync(subDirFileInfo);
-                    });
+                    await subDirFileInfos.ForEachAsync
+                    (
+                        async subDirFileInfo =>
+                        {
+                            await yield.ReturnAsync(subDirFileInfo);
+                        },
+                        Global.CancellationToken.Token
+                    );
 
                 }   //foreach (var dirInfo in dirInfos)
 #endif

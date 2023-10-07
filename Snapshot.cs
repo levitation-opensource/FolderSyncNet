@@ -66,8 +66,8 @@ namespace FolderSync
             if (!volumeName.EndsWith(@"\"))     //roland: IsVolumeSupported requires \ at the end
                 volumeName += @"\";
 
-            //if (_backup.IsVolumeSupported(volumeName))
-            if (true)
+            if (_backup.IsVolumeSupported(volumeName))
+            //if (true)
                 _snap_id = _backup.AddToSnapshotSet(volumeName);
             else
                 throw new VssVolumeNotSupportedException(volumeName);

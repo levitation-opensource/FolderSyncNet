@@ -1,5 +1,5 @@
 ﻿//
-// Copyright (c) Roland Pihlakas 2019 - 2022
+// Copyright (c) Roland Pihlakas 2019 - 2023
 // roland@simplify.ee
 //
 // Roland Pihlakas licenses this file to you under the GNU Lesser General Public License, ver 2.1.
@@ -74,5 +74,5 @@ namespace FolderSync
             FullName = fileSystemInfo.FullName;
             Attributes = fileSystemInfo.Attributes;
         }
-    }   //private class CachedFileInfo : ISerializable
+    }   //private class CachedFileInfo
 }

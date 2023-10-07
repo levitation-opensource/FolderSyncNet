@@ -1,5 +1,5 @@
 ﻿//
-// Copyright (c) Roland Pihlakas 2019 - 2022
+// Copyright (c) Roland Pihlakas 2019 - 2023
 // roland@simplify.ee
 //
 // Roland Pihlakas licenses this file to you under the GNU Lesser General Public License, ver 2.1.
@@ -84,8 +84,12 @@ namespace FolderSync
             message.AppendLine("");
 
 
-            using (await ConsoleWatch.Lock.LockAsync(context.Token))
+            using (await ConsoleWatch.Lock.LockAsyncNoException(context.Token))
             {
+                if (context.Token.IsCancellationRequested)  //the above lock will not throw because we are using LockAsyncNoException
+                    return;
+
+
                 await FileExtensions.AppendAllTextAsync
                 (
                     "UnhandledExceptions.log",
@@ -176,8 +180,12 @@ namespace FolderSync
             message.AppendLine("");
 
 
-            using (await ConsoleWatch.Lock.LockAsync(Global.CancellationToken.Token))
+            using (await ConsoleWatch.Lock.LockAsyncNoException(Global.CancellationToken.Token))
             {
+                if (Global.CancellationToken.IsCancellationRequested)  //the above lock will not throw because we are using LockAsyncNoException
+                    return;
+
+
                 await FileExtensions.AppendAllTextAsync
                 (
                     "UnhandledExceptions.log",
@@ -235,8 +243,12 @@ namespace FolderSync
 
             //await Task.Run(() =>
             {
-                using (await ConsoleWatch.Lock.LockAsync(context.Token))
+                using (await ConsoleWatch.Lock.LockAsyncNoException(context.Token))
                 {
+                    if (context.Token.IsCancellationRequested)  //the above lock will not throw because we are using LockAsyncNoException
+                        return;
+
+
                     if (Global.LogToFile)
                     {
                         await FileExtensions.AppendAllTextAsync
@@ -295,8 +307,13 @@ namespace FolderSync
 
             //await Task.Run(() => 
             {
-                using (await ConsoleWatch.Lock.LockAsync(token ?? Global.CancellationToken.Token))
+                var cancellationToken = token ?? Global.CancellationToken.Token;
+                using (await ConsoleWatch.Lock.LockAsyncNoException(cancellationToken))
                 {
+                    if (cancellationToken.IsCancellationRequested)  //the above lock will not throw because we are using LockAsyncNoException
+                        return;
+
+
                     if (Global.LogToFile && !suppressLogFile)
                     {
                         await FileExtensions.AppendAllTextAsync

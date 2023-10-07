@@ -2,6 +2,9 @@
 /bin
 /obj
 /packages
-/*.bak
-/FolderSyncNet.csproj.user
+*.bak
+/*.csproj.user
 /UpgradeLog.htm
+*.*~
+
+.vshistory

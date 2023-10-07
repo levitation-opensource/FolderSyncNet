@@ -1,5 +1,5 @@
 ﻿//
-// Copyright (c) Roland Pihlakas 2019 - 2022
+// Copyright (c) Roland Pihlakas 2019 - 2023
 // roland@simplify.ee
 //
 // Roland Pihlakas licenses this file to you under the GNU Lesser General Public License, ver 2.1.
@@ -43,7 +43,7 @@ namespace FolderSync
 
                 if (await Extensions.FSOperation
                 (
-                    () => File.Exists(cacheFileName),
+                    cancellationAndTimeoutToken => File.Exists(cacheFileName),
                     cacheFileName,
                     Global.CancellationToken.Token,
                     timeout: 0,     //NB!
@@ -101,7 +101,7 @@ namespace FolderSync
 
                 if (!await Extensions.FSOperation
                 (
-                    () => Directory.Exists(cacheDirName),
+                    cancellationAndTimeoutToken => Directory.Exists(cacheDirName),
                     cacheDirName,
                     Global.CancellationToken.Token,
                     timeout: 0,     //NB!
@@ -110,7 +110,7 @@ namespace FolderSync
                 {
                     await Extensions.FSOperation
                     (
-                        () => Directory.CreateDirectory(cacheDirName),
+                        cancellationAndTimeoutToken => Directory.CreateDirectory(cacheDirName),
                         cacheDirName,
                         Global.CancellationToken.Token,
                         timeout: 0,     //NB!
@@ -127,6 +127,7 @@ namespace FolderSync
                     serialisedData,
                     createTempFileFirst: true,
                     cancellationToken: Global.CancellationToken.Token,
+                    retryCount: 5,  //TODO: config
                     timeout: 0,     //NB!
                     suppressLongRunningOperationMessage: true     //NB!
                 );
@@ -137,6 +138,8 @@ namespace FolderSync
         public static async Task RefreshFileInfo(WatcherContext context)
         {
             var fileInfo = context.Event.FileSystemInfo as FileInfo;
+            //var fileInfo = context.Event.FileSystemInfo.AsFileInfo(); // as FileInfo;
+
             if (fileInfo != null && !context.FileInfoRefreshed.Value)
             //var fileInfo = context.FileInfo;
             //if (!context.FileInfoRefreshed.Value)
@@ -145,7 +148,7 @@ namespace FolderSync
 
                 await Extensions.FSOperation
                 (
-                    () =>
+                    cancellationAndTimeoutToken =>
                     {
                         fileInfo.Refresh();    //https://stackoverflow.com/questions/7828132/getting-current-file-length-fileinfo-length-caching-and-stale-information
                         if (fileInfo.Exists)
@@ -227,7 +230,7 @@ namespace FolderSync
                 if (Global.PersistentCacheDestAndHistoryFolders && removed1)
                 {
                     if (dirName == null)
-                        dirName = Path.GetDirectoryName(fileName);
+                        dirName = FolderSyncNetSource.Path.GetDirectoryName(fileName);
 
                     dirName = Extensions.GetLongPath(Extensions.GetDirPathWithTrailingSlash(dirName));
 
@@ -249,7 +252,7 @@ namespace FolderSync
                 }
 #endif
             }
-            else
+            else    //if (fileInfo == null)
             {
                 var fullName = Extensions.GetLongPath(fileName);
                 Global.DestAndHistoryFileInfoCache[fullName.ToUpperInvariantOnWindows()] = fileInfo;
@@ -258,7 +261,7 @@ namespace FolderSync
                 if (Global.PersistentCacheDestAndHistoryFolders)
                 {
                     if (dirName == null)
-                        dirName = Path.GetDirectoryName(fileName);
+                        dirName = FolderSyncNetSource.Path.GetDirectoryName(fileName);
 
                     dirName = Extensions.GetLongPath(Extensions.GetDirPathWithTrailingSlash(dirName));
 
@@ -275,7 +278,7 @@ namespace FolderSync
                         }
                     }
                 }
-            }
+            }    //if (fileInfo == null)
         }   //internal static async Task SaveFileInfo(string fileName, CachedFileInfo fileInfo, CancellationToken cancellationToken = default(CancellationToken)) 
 
         private static Task<CachedFileInfo> GetFileInfo(WatcherContext context)
@@ -305,7 +308,7 @@ namespace FolderSync
 
             var fileInfo = await Extensions.FSOperation
             (
-                () =>
+                cancellationAndTimeoutToken =>
                 {
                     var fileInfo1 = new FileInfo(fullName);
 
@@ -452,7 +455,10 @@ namespace FolderSync
 
             //NB! no RefreshFileInfo or GetFileExists calls here
 
-            return otherFileInfo.Value.Length.Value;
+            if (!otherFileInfo.Value.Exists.Value)
+                return -1;
+            else
+                return otherFileInfo.Value.Length.Value;
         }
 
         public static async Task InvalidateFileDataInPersistentCache(WatcherContext context)
@@ -466,14 +472,14 @@ namespace FolderSync
                 var otherFullName = await GetOtherFullName(context);
                 var longOtherFullName = Extensions.GetLongPath(otherFullName);
 
-                var otherDirName = Extensions.GetDirPathWithTrailingSlash(Path.GetDirectoryName(otherFullName));
+                var otherDirName = Extensions.GetDirPathWithTrailingSlash(FolderSyncNetSource.Path.GetDirectoryName(otherFullName));
                 var longOtherDirName = Extensions.GetLongPath(otherDirName);
 
                 using (await Global.PersistentCacheLocks.LockAsync(longOtherDirName.ToUpperInvariantOnWindows(), context.Token))
                 {
                     var cachedFileInfos = await ReadFileInfoCache(longOtherDirName, context.ForHistory);
 
-                    if (cachedFileInfos != null)
+                    if (cachedFileInfos != null)    //TODO: if cachedFileInfos == null then scan entire folder and create cached file infos file
                     {
                         cachedFileInfos.Remove(GetNonFullName(longOtherFullName).ToUpperInvariantOnWindows());
 
