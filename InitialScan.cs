@@ -242,7 +242,7 @@ namespace FolderSync
                 var historyFileInfosDict = new Dictionary<string, CachedFileInfo>();
                 //var historyFileInfosTask = Task.CompletedTask;
 
-                AsyncLockQueueDictionary<string>.LockDictReleaser destOrHistoryDirCacheLock = null;
+                IDisposable destOrHistoryDirCacheLock = null;
                 //AsyncLockQueueDictionary<string>.LockDictReleaser historyDirCacheLock = null;
 
                 FileInfo[] fileInfos = null;
